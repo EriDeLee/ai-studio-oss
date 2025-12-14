@@ -12,12 +12,16 @@ export const Tooltip: React.FC<{ text: string; children: React.ReactNode }> = ({
   </div>
 );
 
-interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'onChange'> {
+interface SelectProps {
   label: string;
   children: React.ReactNode;
   labelContent?: React.ReactNode;
-  onChange: (e: { target: { value: string } }) => void;
+  onChange: (e: React.ChangeEvent<HTMLSelectElement> | { target: { value: string } }) => void;
   layout?: 'vertical' | 'horizontal';
+  id?: string;
+  value?: string;
+  disabled?: boolean;
+  className?: string;
 }
 
 export const Select: React.FC<SelectProps> = ({ id, label, children, labelContent, value, onChange, disabled, className, layout = 'vertical', ...rest }) => {
@@ -119,7 +123,7 @@ export const Select: React.FC<SelectProps> = ({ id, label, children, labelConten
                     onClick={handleToggle}
                     disabled={disabled}
                     className={`w-full p-2.5 text-left border rounded-lg flex items-center justify-between transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--theme-border-focus)] ${disabled ? 'opacity-60 cursor-not-allowed bg-[var(--theme-bg-secondary)]' : 'cursor-pointer bg-[var(--theme-bg-input)] hover:border-[var(--theme-border-focus)]'} border-[var(--theme-border-secondary)] text-[var(--theme-text-primary)] text-sm`}
-                    {...rest as any}
+                    {...rest}
                 >
                     <span className="truncate mr-2">
                         {selectedOption ? selectedOption.label : <span className="text-[var(--theme-text-tertiary)]">Select...</span>}

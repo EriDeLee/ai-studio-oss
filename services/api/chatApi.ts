@@ -1,23 +1,9 @@
 
 import { GenerateContentResponse, Part, UsageMetadata, Content, Candidate } from "@google/genai";
 import { ThoughtSupportingPart } from '../../types';
+import { ExtendedUsageMetadata, ExtendedCandidate, GroundingMetadata, UrlContextMetadata } from '../../types/api';
 import { logService } from "../logService";
 import { getConfiguredApiClient } from "./baseApi";
-
-interface ExtendedCandidate extends Candidate {
-    toolCalls?: Array<{
-        functionCall?: {
-            name: string;
-            args: Record<string, any>;
-        }
-    }>;
-    urlContextMetadata?: any;
-    url_context_metadata?: any;
-    groundingMetadata?: any;
-    content?: {
-        parts?: Part[];
-    };
-}
 
 const processResponse = (response: GenerateContentResponse) => {
     let thoughtsText = "";
@@ -37,12 +23,12 @@ const processResponse = (response: GenerateContentResponse) => {
     if (responseParts.length === 0 && response.text) {
         responseParts.push({ text: response.text });
     }
-    
+
     const candidate = response.candidates?.[0] as ExtendedCandidate | undefined;
-    const groundingMetadata = candidate?.groundingMetadata;
-    const finalMetadata: any = groundingMetadata ? { ...groundingMetadata } : {};
-    
-    const urlContextMetadata = candidate?.urlContextMetadata || candidate?.url_context_metadata;
+    const groundingMetadata = candidate?.groundingMetadata as GroundingMetadata | undefined;
+    const finalMetadata: GroundingMetadata = groundingMetadata ? { ...groundingMetadata } : {};
+
+    const urlContextMetadata = (candidate?.urlContextMetadata || candidate?.url_context_metadata) as UrlContextMetadata | undefined;
 
     const toolCalls = candidate?.toolCalls;
     if (toolCalls) {
@@ -62,7 +48,7 @@ const processResponse = (response: GenerateContentResponse) => {
     return {
         parts: responseParts,
         thoughts: thoughtsText || undefined,
-        usage: response.usageMetadata,
+        usage: response.usageMetadata as ExtendedUsageMetadata | undefined,
         grounding: Object.keys(finalMetadata).length > 0 ? finalMetadata : undefined,
         urlContext: urlContextMetadata
     };
@@ -78,12 +64,12 @@ export const sendStatelessMessageStreamApi = async (
     onPart: (part: Part) => void,
     onThoughtChunk: (chunk: string) => void,
     onError: (error: Error) => void,
-    onComplete: (usageMetadata?: UsageMetadata, groundingMetadata?: any, urlContextMetadata?: any) => void
+    onComplete: (usageMetadata?: ExtendedUsageMetadata, groundingMetadata?: GroundingMetadata, urlContextMetadata?: UrlContextMetadata) => void
 ): Promise<void> => {
     logService.info(`Sending message via stateless generateContentStream for ${modelId}`);
-    let finalUsageMetadata: UsageMetadata | undefined = undefined;
-    let finalGroundingMetadata: any = null;
-    let finalUrlContextMetadata: any = null;
+    let finalUsageMetadata: ExtendedUsageMetadata | undefined = undefined;
+    let finalGroundingMetadata: GroundingMetadata | undefined = undefined;
+    let finalUrlContextMetadata: UrlContextMetadata | undefined = undefined;
 
     try {
         const ai = await getConfiguredApiClient(apiKey);
@@ -110,12 +96,12 @@ export const sendStatelessMessageStreamApi = async (
             const candidate = chunkResponse.candidates?.[0] as ExtendedCandidate | undefined;
             
             if (candidate) {
-                const metadataFromChunk = candidate.groundingMetadata;
+                const metadataFromChunk = candidate.groundingMetadata as GroundingMetadata | undefined;
                 if (metadataFromChunk) {
                     finalGroundingMetadata = metadataFromChunk;
                 }
-                
-                const urlMetadata = candidate.urlContextMetadata || candidate.url_context_metadata;
+
+                const urlMetadata = (candidate.urlContextMetadata || candidate.url_context_metadata) as UrlContextMetadata | undefined;
                 if (urlMetadata) {
                     finalUrlContextMetadata = urlMetadata;
                 }
@@ -124,7 +110,7 @@ export const sendStatelessMessageStreamApi = async (
                 if (toolCalls) {
                     for (const toolCall of toolCalls) {
                         if (toolCall.functionCall?.args?.urlContextMetadata) {
-                            if (!finalGroundingMetadata) finalGroundingMetadata = {};
+                            if (!finalGroundingMetadata) finalGroundingMetadata = {} as GroundingMetadata;
                             if (!finalGroundingMetadata.citations) finalGroundingMetadata.citations = [];
                             const newCitations = toolCall.functionCall.args.urlContextMetadata.citations || [];
                             for (const newCitation of newCitations) {
@@ -166,7 +152,7 @@ export const sendStatelessMessageNonStreamApi = async (
     config: any,
     abortSignal: AbortSignal,
     onError: (error: Error) => void,
-    onComplete: (parts: Part[], thoughtsText?: string, usageMetadata?: UsageMetadata, groundingMetadata?: any, urlContextMetadata?: any) => void
+    onComplete: (parts: Part[], thoughtsText?: string, usageMetadata?: ExtendedUsageMetadata, groundingMetadata?: GroundingMetadata, urlContextMetadata?: UrlContextMetadata) => void
 ): Promise<void> => {
     logService.info(`Sending message via stateless generateContent (non-stream) for model ${modelId}`);
     

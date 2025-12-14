@@ -96,7 +96,12 @@ export const showNotification = async (title: string, options?: NotificationOpti
   }
 
   const show = () => {
-    const notification = new Notification(title, { ...options, tag: 'ai-studio-response', renotify: true } as any);
+    const notificationOptions = {
+      ...options,
+      tag: 'ai-studio-response',
+      renotify: true
+    } as NotificationOptions;
+    const notification = new Notification(title, notificationOptions);
 
     notification.onclick = () => {
       window.focus();

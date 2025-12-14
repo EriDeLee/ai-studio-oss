@@ -6,7 +6,18 @@ import { exportSvgAsPng } from '../../utils/exportUtils';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import { MESSAGE_BLOCK_BUTTON_CLASS } from '../../constants/appConstants';
 
-declare var Viz: any;
+declare global {
+    interface Window {
+        Viz?: new () => {
+            renderSVGElement: (code: string) => Promise<SVGElement>;
+        };
+    }
+}
+
+// 本地类型声明以便在代码中使用
+type VizConstructor = new () => {
+    renderSVGElement: (code: string) => Promise<SVGElement>;
+};
 
 interface GraphvizBlockProps {
   code: string;
@@ -106,12 +117,12 @@ export const GraphvizBlock: React.FC<GraphvizBlockProps> = ({ code, onImageClick
         setSvgContent('');
     } else if (code) {
         const initAndRender = () => {
-            vizInstanceRef.current = new Viz({ worker: undefined });
+            vizInstanceRef.current = new (window.Viz as any)({ worker: undefined });
             renderGraph(layout);
         };
-        if (typeof Viz === 'undefined') {
+        if (typeof window.Viz === 'undefined') {
             intervalId = window.setInterval(() => {
-                if (typeof Viz !== 'undefined') {
+                if (typeof window.Viz !== 'undefined') {
                     clearInterval(intervalId);
                     initAndRender();
                 }

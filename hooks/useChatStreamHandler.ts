@@ -2,6 +2,7 @@
 import { Dispatch, SetStateAction, useCallback } from 'react';
 import { AppSettings, ChatMessage, SavedChatSession, ChatSettings as IndividualChatSettings, UploadedFile } from '../types';
 import { Part, UsageMetadata } from '@google/genai';
+import { ExtendedUsageMetadata, GroundingMetadata, UrlContextMetadata } from '../types/api';
 import { useApiErrorHandler } from './useApiErrorHandler';
 import { generateUniqueId, logService, showNotification, getTranslator, base64ToBlobUrl, getExtensionFromMimeType } from '../utils/appUtils';
 import { APP_LOGO_URI } from '../constants/appConstants';
@@ -78,7 +79,7 @@ export const useChatStreamHandler = ({
             activeJobs.current.delete(generationId);
         };
 
-        const streamOnComplete = (usageMetadata?: UsageMetadata, groundingMetadata?: any, urlContextMetadata?: any) => {
+        const streamOnComplete = (usageMetadata?: ExtendedUsageMetadata, groundingMetadata?: GroundingMetadata, urlContextMetadata?: UrlContextMetadata) => {
             // Use correct language from state, falling back to system logic if needed
             const lang = appSettings.language === 'system' 
                 ? (navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en')
@@ -93,7 +94,7 @@ export const useChatStreamHandler = ({
             // Record Token Usage Statistics
             if (usageMetadata) {
                 let promptTokens = usageMetadata.promptTokenCount || 0;
-                let completionTokens = (usageMetadata as any).candidatesTokenCount || 0;
+                let completionTokens = usageMetadata?.candidatesTokenCount || 0;
                 const totalTokens = usageMetadata.totalTokenCount || 0;
 
                 // Fallback: If candidatesTokenCount is missing (0/undefined) but we have total and prompt, calculate it
@@ -137,7 +138,7 @@ export const useChatStreamHandler = ({
                                 completionTokens = totalTokenCount - promptTokens;
                             }
 
-                            // @ts-ignore - SDK types might be partial depending on version, but runtime provides it
+                            // 使用扩展类型
                             const thoughtTokens = usageMetadata?.thoughtsTokenCount;
                             
                             cumulativeTotal += totalTokenCount;
