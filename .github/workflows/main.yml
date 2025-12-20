@@ -2,48 +2,39 @@ name: Sync Subdirectory from Upstream
 
 on:
   workflow_dispatch:
+#  schedule:
+#    - cron: '0 8 * * *'
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
-      - name: Checkout destination repository
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Clone source repository
-        run: git clone --depth=1 https://github.com/yeahhe365/All-Model-Chat.git temp_source
-
-      # 获取上游仓库的 commit hash
-      - name: Get upstream commit hash
-        id: upstream
-        run: echo "hash=$(git -C temp_source rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      # 检查目录，并执行同步
-      - name: Sync subdirectory to root
+      - name: Ensure upstream branch exists
         run: |
-          # 检查源目录是否存在，如果不存在则优雅退出
-          if [ ! -d "temp_source/all-model-chat" ]; then
-            echo "Source directory 'temp_source/all-model-chat' not found. Skipping sync."
-            exit 0
-          fi
-          
-          rsync -av --delete --exclude 'temp_source' --exclude '.github' --exclude '.git' temp_source/all-model-chat/ ./          
-          rm -rf temp_source
+          git fetch origin upstream:upstream 2>/dev/null || git checkout -b upstream
 
-      - name: Commit and push changes
+      - name: Clone and sync
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git clone --depth=1 https://github.com/yeahhe365/All-Model-Chat.git temp
           
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "No changes to commit."
-            exit 0
+          if [ -d "temp/all-model-chat" ]; then
+            HASH=$(git -C temp rev-parse --short HEAD)
+            rsync -av --delete-after --exclude='.git' temp/all-model-chat/ ./
+            rm -rf temp
+            
+            git config user.name 'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git add .
+            git diff --staged --quiet || git commit -m "Sync from upstream @ $HASH"
+            git push -u origin upstream
+          else
+            rm -rf temp
           fi
-          
-          git add .
-          
-          git commit -m "Sync from upstream @ ${{ steps.upstream.outputs.hash }}"
-          
-          git push
