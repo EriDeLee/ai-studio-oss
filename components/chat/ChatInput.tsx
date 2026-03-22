@@ -228,25 +228,25 @@ export const ChatInput: React.FC<ChatInputProps> = (props) => {
     }
   }, [isWaitingForUpload, selectedFiles, onSendMessage, inputText, quoteText, onMessageSent, clearCurrentDraft, isFullscreen]);
 
-  const isGemini3ImageModel = currentChatSettings.modelId === 'gemini-3-pro-image-preview';
+  const isGemini3ImageModel = currentChatSettings.modelId === 'gemini-3-pro-image-preview' || currentChatSettings.modelId === 'gemini-3.1-flash-image-preview';
   const isFlashImageModel = currentChatSettings.modelId.includes('gemini-2.5-flash-image');
   const isRealImagen = currentChatSettings.modelId.includes('imagen');
-  
+
   // Calculate if active model is a Gemini 3 model (for chat or image)
   // Used to enable per-file resolution settings
   const isGemini3 = isGemini3Model(currentChatSettings.modelId);
 
   let supportedAspectRatios: string[] | undefined;
-  
+
   if (isRealImagen) {
       supportedAspectRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'];
   } else if (isGemini3ImageModel || isFlashImageModel) {
-      supportedAspectRatios = ['Auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '4:5', '5:4', '21:9'];
+      supportedAspectRatios = ['Auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '4:5', '5:4', '21:9', '1:4', '4:1', '1:8', '8:1'];
   }
 
   let supportedImageSizes: string[] | undefined;
   if (isGemini3ImageModel) {
-      supportedImageSizes = ['1K', '2K', '4K'];
+      supportedImageSizes = ['0.5K', '1K', '2K', '4K'];
   } else if (isRealImagen && !currentChatSettings.modelId.includes('fast')) {
       // Standard and Ultra support 1K and 2K
       supportedImageSizes = ['1K', '2K'];

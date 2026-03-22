@@ -181,7 +181,7 @@ export const useChat = (appSettings: AppSettings, setAppSettings: React.Dispatch
     useEffect(() => {
         if (prevModelIdRef.current !== currentChatSettings.modelId) {
             const modelId = currentChatSettings.modelId;
-            const isBananaModel = modelId.includes('gemini-2.5-flash-image') || modelId.includes('gemini-3-pro-image');
+            const isBananaModel = modelId.includes('gemini-2.5-flash-image') || modelId.includes('gemini-3-pro-image') || modelId.includes('gemini-3.1-flash-image');
             
             if (isBananaModel) {
                 setAspectRatio('Auto');

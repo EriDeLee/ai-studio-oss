@@ -153,7 +153,7 @@ export const buildGenerationConfig = (
         return config;
     }
 
-    if (modelId === 'gemini-3-pro-image-preview') {
+    if (modelId === 'gemini-3-pro-image-preview' || modelId === 'gemini-3.1-flash-image-preview') {
          const imageConfig: any = {
             imageSize: imageSize || '1K',
          };
@@ -171,6 +171,18 @@ export const buildGenerationConfig = (
          if (tools.length > 0) config.tools = tools;
 
          if (systemInstruction) config.systemInstruction = systemInstruction;
+
+         // Gemini 3.1 Flash Image Preview supports thinking
+         if (modelId === 'gemini-3.1-flash-image-preview') {
+             config.thinkingConfig = {
+                 includeThoughts: showThoughts,
+             };
+             if (thinkingBudget > 0) {
+                 config.thinkingConfig.thinkingBudget = thinkingBudget;
+             } else {
+                 config.thinkingConfig.thinkingLevel = thinkingLevel || 'HIGH';
+             }
+         }
 
          return config;
     }

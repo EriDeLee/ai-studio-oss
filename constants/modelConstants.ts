@@ -53,6 +53,7 @@ export const STATIC_TTS_MODELS: ModelOption[] = [
 export const STATIC_IMAGEN_MODELS: ModelOption[] = [
     { id: 'gemini-2.5-flash-image-preview', name: 'Nano Banana', isPinned: true },
     { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro', isPinned: true },
+    { id: 'gemini-3.1-flash-image-preview', name: 'Nano Banana 2', isPinned: true },
     { id: 'models/imagen-4.0-fast-generate-001', name: 'Imagen 4.0 Fast', isPinned: true },
     { id: 'models/imagen-4.0-generate-001', name: 'Imagen 4.0', isPinned: true },
     { id: 'models/imagen-4.0-ultra-generate-001', name: 'Imagen 4.0 Ultra', isPinned: true },

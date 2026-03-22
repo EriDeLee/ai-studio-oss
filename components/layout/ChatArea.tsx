@@ -178,7 +178,7 @@ export const ChatArea: React.FC<ChatAreaProps> = (props) => {
   }, []);
 
   // Determine if the model supports aspect ratio selection (Imagen models OR Gemini 2.5 Flash Image)
-  const isImagenModel = currentChatSettings.modelId?.includes('imagen') || currentChatSettings.modelId?.includes('gemini-2.5-flash-image');
+  const isImagenModel = currentChatSettings.modelId?.includes('imagen') || currentChatSettings.modelId?.includes('gemini-2.5-flash-image') || currentChatSettings.modelId?.includes('gemini-3.1-flash-image');
 
   const handleQuote = useCallback((text: string) => {
       setCommandedInput({ text: text, id: Date.now(), mode: 'quote' });
