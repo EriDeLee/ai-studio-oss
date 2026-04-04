@@ -16,8 +16,11 @@ const DEFAULT_SETTINGS: ImageChatSettings = {
   professionalMode: false,
   aspectRatio: '1:1',
   numberOfImages: 1,
+  guidanceScale: 7.5,
   enhancePrompt: true,
   language: 'auto',
+  thinkingLevel: 'minimal',
+  responseModality: 'text_image',
 };
 
 function readSettingsFromStorage(): ImageChatSettings {
