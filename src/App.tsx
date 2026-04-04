@@ -1,17 +1,26 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './pages';
-import { TextToImage, ImageToImage, ImageEdit } from './features/image';
+import { LoadingFallback, ErrorBoundary } from './components/ui';
+
+const ImageChat = lazy(() =>
+  import('./features/image/ImageChat').then((mod) => ({
+    default: mod.ImageChat,
+  }))
+);
 
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<TextToImage />} />
-          <Route path="image-to-image" element={<ImageToImage />} />
-          <Route path="edit" element={<ImageEdit />} />
-        </Route>
-      </Routes>
+      <ErrorBoundary>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<ImageChat />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

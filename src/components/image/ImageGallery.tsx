@@ -34,8 +34,9 @@ export function ImageGallery({ images, className }: ImageGalleryProps) {
         <img
           src={`data:${selectedImage.mimeType};base64,${selectedImage.base64}`}
           alt={`Generated image ${selectedIndex + 1}`}
+          decoding="async"
           className={cn(
-            'w-full h-auto object-contain transition-transform',
+            'w-full h-auto object-contain transition-transform motion-reduce:transition-none',
             isZoomed ? 'cursor-zoom-out scale-150' : 'cursor-zoom-in'
           )}
           onClick={() => setIsZoomed(!isZoomed)}
@@ -73,7 +74,7 @@ export function ImageGallery({ images, className }: ImageGalleryProps) {
               type="button"
               onClick={() => setSelectedIndex(index)}
               className={cn(
-                'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors',
+                'flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors motion-reduce:transition-none',
                 selectedIndex === index
                   ? 'border-primary-500'
                   : 'border-transparent hover:border-gray-300'
@@ -82,7 +83,9 @@ export function ImageGallery({ images, className }: ImageGalleryProps) {
               <img
                 src={`data:${image.mimeType};base64,${image.base64}`}
                 alt={`Thumbnail ${index + 1}`}
+                decoding="async"
                 className="w-full h-full object-cover"
+                loading="lazy"
               />
             </button>
           ))}

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
   ImageGenerationRequest,
   ImageGenerationResponse,
@@ -12,7 +12,8 @@ interface UseImageGenerationState {
 }
 
 interface UseImageGenerationReturn extends UseImageGenerationState {
-  generate: (request: ImageGenerationRequest) => Promise<void>;
+  generate: (request: ImageGenerationRequest, previousInteractionId?: string) => Promise<void>;
+  cancel: () => void;
   reset: () => void;
 }
 
@@ -23,13 +24,33 @@ export function useImageGeneration(): UseImageGenerationReturn {
     response: null,
   });
 
-  const generate = useCallback(async (request: ImageGenerationRequest) => {
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  const generate = useCallback(async (request: ImageGenerationRequest, previousInteractionId?: string) => {
+    // Cancel any in-flight request
+    abortControllerRef.current?.abort();
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await generateImage(request);
+      const response = await generateImage(request, controller.signal, previousInteractionId);
       setState({ isLoading: false, error: null, response });
     } catch (err) {
+      // Ignore abort errors
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to generate image';
       setState((prev) => ({
@@ -40,9 +61,15 @@ export function useImageGeneration(): UseImageGenerationReturn {
     }
   }, []);
 
-  const reset = useCallback(() => {
-    setState({ isLoading: false, error: null, response: null });
+  const cancel = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
   }, []);
 
-  return { ...state, generate, reset };
+  const reset = useCallback(() => {
+    cancel();
+    setState({ isLoading: false, error: null, response: null });
+  }, [cancel]);
+
+  return { ...state, generate, cancel, reset };
 }

@@ -1,1 +1,1 @@
-export { generateImage, getGeminiClient } from './client';
+export { generateImage, chatImageGeneration, getGeminiClient } from './client';

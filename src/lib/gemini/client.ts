@@ -3,10 +3,27 @@ import type {
   ImageGenerationRequest,
   ImageGenerationResponse,
   GeneratedImage,
-  TextToImageRequest,
-  ImageToImageRequest,
-  InpaintingRequest,
+  ResponseModality,
 } from '../../types';
+import { stripDataUrlPrefix } from '../utils';
+
+// Retry configuration
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 2000; // 2 seconds base delay
+
+type ImageMimeType =
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/webp'
+  | 'image/heic'
+  | 'image/heif'
+  | 'image/gif'
+  | 'image/bmp'
+  | 'image/tiff';
+
+type InteractionInputPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mime_type?: ImageMimeType };
 
 const getApiKey = (): string => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -25,50 +42,181 @@ const getClient = (): GoogleGenAI => {
   return client;
 };
 
-const extractImagesFromResponse = (response: unknown): GeneratedImage[] => {
-  const images: GeneratedImage[] = [];
-  const resp = response as {
-    generatedImages?: Array<{
-      images?: Array<{ imageBytes?: string; mimeType?: string }>;
-    }>;
-    candidates?: Array<{
-      content?: {
-        parts?: Array<{
-          inlineData?: { mimeType?: string; data?: string };
-        }>;
-      };
-    }>;
-  };
+// Retry with exponential backoff
+const withRetry = async <T>(
+  fn: () => Promise<T>,
+  operationName: string
+): Promise<T> => {
+  let lastError: Error | null = null;
 
-  // Handle generatedImages format
-  if (resp.generatedImages) {
-    for (const genImage of resp.generatedImages) {
-      if (genImage.images) {
-        for (const img of genImage.images) {
-          if (img.imageBytes) {
-            images.push({
-              base64: img.imageBytes,
-              mimeType: img.mimeType || 'image/png',
-            });
-          }
-        }
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+
+      // Don't retry if aborted
+      if (lastError.name === 'AbortError') {
+        throw new Error(`${operationName} 请求已取消`);
       }
+
+      // Don't retry on last attempt
+      if (attempt === MAX_RETRIES) {
+        break;
+      }
+
+      // Exponential backoff: 2s, 4s
+      const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
+      console.warn(`${operationName} 请求失败，${delay / 1000}秒后重试（${attempt + 1}/${MAX_RETRIES}）:`, lastError.message);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
-  // Handle candidates format
-  if (resp.candidates) {
-    for (const candidate of resp.candidates) {
-      const parts = candidate.content?.parts;
-      if (parts) {
-        for (const part of parts) {
-          if (part.inlineData?.data) {
-            images.push({
-              base64: part.inlineData.data,
-              mimeType: part.inlineData.mimeType || 'image/png',
-            });
-          }
-        }
+  throw lastError || new Error(`${operationName} 请求失败`);
+};
+
+/**
+ * Build input for Interactions API based on request type
+ */
+const buildInput = (
+  request: ImageGenerationRequest
+): string | InteractionInputPart[] => {
+  switch (request.type) {
+    case 'text-to-image':
+      return request.prompt;
+
+    case 'image-to-image': {
+      const parts: InteractionInputPart[] = [
+        { type: 'text', text: request.prompt },
+        ...request.referenceImages.map((img, i) => ({
+          type: 'image' as const,
+          data: stripDataUrlPrefix(img),
+          mime_type: (request.referenceImageMimeTypes?.[i] || 'image/png') as ImageMimeType,
+        })),
+      ];
+      return parts;
+    }
+
+    case 'inpainting': {
+      const parts: InteractionInputPart[] = [
+        { type: 'text', text: request.prompt },
+        ...request.referenceImages.map((img, i) => ({
+          type: 'image' as const,
+          data: stripDataUrlPrefix(img),
+          mime_type: (request.referenceImageMimeTypes?.[i] || 'image/png') as ImageMimeType,
+        })),
+      ];
+
+      if (request.maskImage) {
+        parts.push({
+          type: 'image',
+          data: stripDataUrlPrefix(request.maskImage),
+          mime_type: 'image/png',
+        });
+      }
+
+      return parts;
+    }
+
+    default: {
+      const _exhaustiveCheck: never = request;
+      throw new Error(`Unsupported request type: ${_exhaustiveCheck}`);
+    }
+  }
+};
+
+/**
+ * Build generation config for Interactions API
+ */
+const buildGenerationConfig = (request: ImageGenerationRequest) => {
+  const config: Record<string, unknown> = {};
+
+  if (request.type === 'text-to-image') {
+    if (request.numberOfImages) config.numberOfImages = request.numberOfImages;
+    if (request.aspectRatio) config.aspectRatio = request.aspectRatio;
+    if (request.negativePrompt) config.negativePrompt = request.negativePrompt;
+    if (request.seed) config.seed = request.seed;
+    if (request.guidanceScale) config.guidanceScale = request.guidanceScale;
+    if (request.imageSize) config.imageSize = request.imageSize;
+    if (request.addWatermark !== undefined) config.addWatermark = request.addWatermark;
+    if (request.safetyFilterLevel) config.safetyFilterLevel = request.safetyFilterLevel;
+    if (request.personGeneration) config.personGeneration = request.personGeneration;
+    if (request.language && request.language !== 'auto') config.language = request.language;
+    if (request.enhancePrompt !== undefined) config.enhancePrompt = request.enhancePrompt;
+    if (request.thinkingLevel) config.thinkingLevel = request.thinkingLevel;
+    if (request.includeThoughts !== undefined) config.includeThoughts = request.includeThoughts;
+  } else {
+    // image-to-image and inpainting
+    if (request.numberOfImages) config.numberOfImages = request.numberOfImages;
+    if (request.seed) config.seed = request.seed;
+  }
+
+  return config;
+};
+
+/**
+ * Build tools array for Google Search / Image Search
+ */
+const buildTools = (
+  enableGoogleSearch?: boolean,
+  enableImageSearch?: boolean
+): any[] | undefined => {
+  if (!enableGoogleSearch) return undefined;
+
+  if (enableImageSearch) {
+    return [
+      {
+        google_search: {
+          search_types: {
+            web_search: {},
+            image_search: {},
+          },
+        },
+      },
+    ];
+  }
+
+  return [{ google_search: {} }];
+};
+
+/**
+ * Map responseModality to API response_modalities
+ */
+const mapResponseModality = (
+  modality?: ResponseModality
+): ('image' | 'text')[] => {
+  if (modality === 'image') return ['image'];
+  return ['image', 'text'];
+};
+
+/**
+ * Extract images from Interactions API response outputs
+ */
+const extractImagesFromOutputs = (outputs: unknown[]): GeneratedImage[] => {
+  const images: GeneratedImage[] = [];
+
+  if (!Array.isArray(outputs)) return images;
+
+  for (const output of outputs) {
+    if (
+      output &&
+      typeof output === 'object' &&
+      'type' in output &&
+      (output as { type: string }).type === 'image'
+    ) {
+      const block = output as { data?: string; mime_type?: string; mimeType?: string; uri?: string };
+      if (block.data) {
+        images.push({
+          base64: block.data,
+          mimeType: block.mime_type || block.mimeType || 'image/png',
+        });
+      } else if (block.uri) {
+        const rawBase64 = stripDataUrlPrefix(block.uri);
+        const mimeMatch = block.uri.match(/^data:([^;]+);base64,/);
+        images.push({
+          base64: rawBase64,
+          mimeType: mimeMatch ? mimeMatch[1] : 'image/png',
+        });
       }
     }
   }
@@ -76,117 +224,109 @@ const extractImagesFromResponse = (response: unknown): GeneratedImage[] => {
   return images;
 };
 
+/**
+ * Generate image using Interactions API (unified interface)
+ * Supports text-to-image, image-to-image, and inpainting
+ */
 export const generateImage = async (
-  request: ImageGenerationRequest
+  request: ImageGenerationRequest,
+  signal?: AbortSignal,
+  previousInteractionId?: string
 ): Promise<ImageGenerationResponse> => {
   const ai = getClient();
 
-  let response: unknown;
+  const input = buildInput(request);
+  const generationConfig = buildGenerationConfig(request);
 
-  switch (request.type) {
-    case 'text-to-image':
-      response = await handleTextToImage(ai, request);
-      break;
-    case 'image-to-image':
-      response = await handleImageToImage(ai, request);
-      break;
-    case 'inpainting':
-      response = await handleInpainting(ai, request);
-      break;
-    default:
-      throw new Error(`Unsupported request type`);
-  }
+  const operationName =
+    request.type === 'text-to-image'
+      ? '文生图'
+      : request.type === 'image-to-image'
+        ? '图生图'
+        : '图像编辑';
 
-  const images = extractImagesFromResponse(response);
+  const executeRequest = async () => {
+    const interaction = await ai.interactions.create({
+      model: request.model,
+      input,
+      response_modalities: mapResponseModality(
+        request.type === 'text-to-image'
+          ? (request as any).responseModality
+          : undefined
+      ),
+      ...(Object.keys(generationConfig).length > 0 ? { generation_config: generationConfig } : {}),
+      ...(buildTools(
+        request.type === 'text-to-image' ? (request as any).enableGoogleSearch : undefined,
+        request.type === 'text-to-image' ? (request as any).enableImageSearch : undefined
+      ) ? { tools: buildTools(
+        request.type === 'text-to-image' ? (request as any).enableGoogleSearch : undefined,
+        request.type === 'text-to-image' ? (request as any).enableImageSearch : undefined
+      ) as any } : {}),
+      ...(previousInteractionId ? { previous_interaction_id: previousInteractionId } : {}),
+      ...(signal ? { httpOptions: { signal } } : {}),
+    });
+
+    return interaction;
+  };
+
+  const interaction = await withRetry(executeRequest, operationName);
+
+  // Extract images from outputs
+  const images = extractImagesFromOutputs((interaction as any).outputs || []);
 
   return {
     images,
     model: request.model,
+    interactionId: (interaction as any).id,
   };
 };
 
-const handleTextToImage = async (
-  ai: GoogleGenAI,
-  request: TextToImageRequest
-): Promise<unknown> => {
-  const response = await ai.models.generateImages({
-    model: request.model,
-    prompt: request.prompt,
-    config: {
-      numberOfImages: request.numberOfImages || 1,
-    },
-  });
+/**
+ * Chat-style image generation with conversation history
+ * Uses previous_interaction_id to maintain context
+ */
+export const chatImageGeneration = async (
+  model: string,
+  input: string | InteractionInputPart[],
+  config: Record<string, unknown>,
+  previousInteractionId: string | null,
+  signal?: AbortSignal
+): Promise<ImageGenerationResponse> => {
+  const ai = getClient();
 
-  return response;
-};
+  // Extract search settings from config
+  const enableGoogleSearch = config.enableGoogleSearch as boolean | undefined;
+  const enableImageSearch = config.enableImageSearch as boolean | undefined;
+  const responseModality = config.responseModality as ResponseModality | undefined;
 
-const handleImageToImage = async (
-  ai: GoogleGenAI,
-  request: ImageToImageRequest
-): Promise<unknown> => {
-  const response = await ai.models.generateContent({
-    model: request.model,
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            text: request.prompt,
-          },
-          {
-            inlineData: {
-              mimeType: request.referenceImageMimeType || 'image/png',
-              data: request.referenceImage.replace(/^data:image\/\w+;base64,/, ''),
-            },
-          },
-        ],
-      },
-    ],
-    config: {
-      responseModalities: ['image', 'text'],
-    },
-  });
+  // Remove non-generation-config fields before passing to API
+  const { enableGoogleSearch: _, enableImageSearch: __, responseModality: ___, ...generationConfig } = config;
 
-  return response;
-};
-
-const handleInpainting = async (
-  ai: GoogleGenAI,
-  request: InpaintingRequest
-): Promise<unknown> => {
-  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
-    { text: request.prompt },
-    {
-      inlineData: {
-        mimeType: request.referenceImageMimeType || 'image/png',
-        data: request.referenceImage.replace(/^data:image\/\w+;base64,/, ''),
-      },
-    },
-  ];
-
-  if (request.maskImage) {
-    parts.push({
-      inlineData: {
-        mimeType: 'image/png',
-        data: request.maskImage.replace(/^data:image\/\w+;base64,/, ''),
-      },
+  const executeRequest = async () => {
+    const interaction = await ai.interactions.create({
+      model,
+      input,
+      response_modalities: mapResponseModality(responseModality),
+      ...(Object.keys(generationConfig).length > 0 ? { generation_config: generationConfig } : {}),
+      ...(buildTools(enableGoogleSearch, enableImageSearch)
+        ? { tools: buildTools(enableGoogleSearch, enableImageSearch) as any }
+        : {}),
+      ...(previousInteractionId ? { previous_interaction_id: previousInteractionId } : {}),
+      ...(signal ? { httpOptions: { signal } } : {}),
     });
-  }
 
-  const response = await ai.models.generateContent({
-    model: request.model,
-    contents: [
-      {
-        role: 'user',
-        parts,
-      },
-    ],
-    config: {
-      responseModalities: ['image', 'text'],
-    },
-  });
+    return interaction;
+  };
 
-  return response;
+  const interaction = await withRetry(executeRequest, '对话生成');
+
+  const images = extractImagesFromOutputs((interaction as any).outputs || []);
+
+  return {
+    images,
+    model: model as any,
+    interactionId: (interaction as any).id,
+  };
 };
 
 export { getClient as getGeminiClient };

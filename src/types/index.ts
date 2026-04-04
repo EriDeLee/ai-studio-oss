@@ -12,6 +12,53 @@ export type Model = ImageModel; // 未来可扩展: | AudioModel | VideoModel
 // 图像生成任务类型
 export type ImageTaskType = 'text-to-image' | 'image-to-image' | 'inpainting';
 
+// 宽高比 (kept for backward compat, but SDK uses string)
+export type AspectRatio =
+  | 'square'
+  | 'portrait'
+  | 'landscape'
+  | '16:9'
+  | '9:16'
+  | '4:3'
+  | '3:4'
+  | '1:1';
+
+// Our own string types for UI, cast at API boundary
+export type SafetyFilterLevel =
+  | 'BLOCK_LOW_AND_ABOVE'
+  | 'BLOCK_MEDIUM_AND_ABOVE'
+  | 'BLOCK_ONLY_HIGH'
+  | 'BLOCK_NONE';
+
+export type PersonGeneration =
+  | 'DONT_ALLOW'
+  | 'ALLOW_ADULT'
+  | 'ALLOW_ALL';
+
+export type ImagePromptLanguage =
+  | 'auto'
+  | 'zh'
+  | 'en'
+  | 'ja'
+  | 'ko'
+  | 'hi'
+  | 'pt'
+  | 'de'
+  | 'es'
+  | 'fr'
+  | 'id'
+  | 'it'
+  | 'ru'
+  | 'uk'
+  | 'vi'
+  | 'ar';
+
+// 思考级别
+export type ThinkingLevel = 'minimal' | 'high';
+
+// 响应模态
+export type ResponseModality = 'text_image' | 'image';
+
 // 图像生成请求
 export interface TextToImageRequest {
   type: 'text-to-image';
@@ -19,26 +66,41 @@ export interface TextToImageRequest {
   prompt: string;
   negativePrompt?: string;
   numberOfImages?: number;
-  aspectRatio?: AspectRatio;
+  aspectRatio?: string;
+  seed?: number;
+  guidanceScale?: number;
+  imageSize?: string;
+  addWatermark?: boolean;
+  safetyFilterLevel?: SafetyFilterLevel;
+  personGeneration?: PersonGeneration;
+  language?: ImagePromptLanguage;
+  enhancePrompt?: boolean;
+  thinkingLevel?: ThinkingLevel;
+  includeThoughts?: boolean;
+  responseModality?: ResponseModality;
+  enableGoogleSearch?: boolean;
+  enableImageSearch?: boolean;
 }
 
 export interface ImageToImageRequest {
   type: 'image-to-image';
   model: ImageModel;
   prompt: string;
-  referenceImage: string; // base64 or URL
-  referenceImageMimeType?: string;
+  referenceImages: string[]; // base64 or URL array (multi-image support)
+  referenceImageMimeTypes?: string[];
   numberOfImages?: number;
+  seed?: number;
 }
 
 export interface InpaintingRequest {
   type: 'inpainting';
   model: ImageModel;
   prompt: string;
-  referenceImage: string;
+  referenceImages: string[];
   maskImage?: string;
-  referenceImageMimeType?: string;
+  referenceImageMimeTypes?: string[];
   numberOfImages?: number;
+  seed?: number;
 }
 
 export type ImageGenerationRequest =
@@ -55,18 +117,9 @@ export interface GeneratedImage {
 export interface ImageGenerationResponse {
   images: GeneratedImage[];
   model: ImageModel;
+  /** Interactions API interaction ID for multi-turn conversation */
+  interactionId?: string;
 }
-
-// 宽高比
-export type AspectRatio =
-  | 'square'
-  | 'portrait'
-  | 'landscape'
-  | '16:9'
-  | '9:16'
-  | '4:3'
-  | '3:4'
-  | '1:1';
 
 // 模型配置
 export interface ModelConfig {
@@ -77,20 +130,41 @@ export interface ModelConfig {
   maxImages: number;
 }
 
-// 模型配置列表
-export const IMAGE_MODELS: ModelConfig[] = [
-  {
-    id: 'gemini-3-pro-image-preview',
-    name: 'Gemini 3 Pro Image',
-    description: '高质量图像生成模型，适合复杂场景',
-    supportedTaskTypes: ['text-to-image', 'image-to-image', 'inpainting'],
-    maxImages: 4,
-  },
-  {
-    id: 'gemini-3.1-flash-image-preview',
-    name: 'Gemini 3.1 Flash Image',
-    description: '快速图像生成模型，适合实时预览',
-    supportedTaskTypes: ['text-to-image', 'image-to-image'],
-    maxImages: 4,
-  },
-];
+// Chat message types for unified conversational UI
+export interface ChatUserMessage {
+  role: 'user';
+  content: string;
+  attachments?: string[]; // base64 images
+  timestamp: number;
+}
+
+export interface ChatAssistantMessage {
+  role: 'assistant';
+  content?: string; // text explanation from model
+  images: GeneratedImage[];
+  interactionId?: string;
+  timestamp: number;
+}
+
+export type ChatMessage = ChatUserMessage | ChatAssistantMessage;
+
+// Unified chat settings
+export interface ImageChatSettings {
+  model: ImageModel;
+  aspectRatio?: string;
+  numberOfImages?: number;
+  seed?: number;
+  guidanceScale?: number;
+  imageSize?: string;
+  addWatermark?: boolean;
+  safetyFilterLevel?: SafetyFilterLevel;
+  personGeneration?: PersonGeneration;
+  language?: ImagePromptLanguage;
+  enhancePrompt?: boolean;
+  negativePrompt?: string;
+  thinkingLevel?: ThinkingLevel;
+  includeThoughts?: boolean;
+  responseModality?: ResponseModality;
+  enableGoogleSearch?: boolean;
+  enableImageSearch?: boolean;
+}
