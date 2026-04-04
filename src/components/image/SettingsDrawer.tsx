@@ -1,6 +1,7 @@
 import { X, Settings2 } from 'lucide-react';
 import type { ImageChatSettings, ImageModel, SafetyFilterLevel, PersonGeneration, ImagePromptLanguage, ThinkingLevel, ResponseModality } from '../../types';
 import { cn } from '../../lib/utils';
+import { Slider } from '../ui/Slider';
 
 interface SettingsDrawerProps {
   settings: ImageChatSettings;
@@ -363,14 +364,13 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               placeholder="留空表示随机"
             />
 
-            <NumberField
+            <Slider
               label="提示词遵循度"
               value={settings.guidanceScale}
               onChange={(v) => update('guidanceScale', v)}
               min={1}
               max={10}
               step={0.5}
-              placeholder="默认"
             />
 
             <div>
