@@ -6,7 +6,7 @@ import type {
   TextToImageRequest,
   ImageToImageRequest,
   InpaintingRequest,
-} from '../types';
+} from '../../types';
 
 const getApiKey = (): string => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
