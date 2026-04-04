@@ -151,6 +151,7 @@ export type ChatMessage = ChatUserMessage | ChatAssistantMessage;
 // Unified chat settings
 export interface ImageChatSettings {
   model: ImageModel;
+  professionalMode?: boolean;
   aspectRatio?: string;
   numberOfImages?: number;
   seed?: number;

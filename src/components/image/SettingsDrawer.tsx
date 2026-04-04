@@ -39,6 +39,19 @@ const ASPECT_RATIO_OPTIONS = [
   { value: '21:9', label: '21:9 超宽屏' },
 ];
 
+const PRO_ASPECT_RATIO_OPTIONS = [
+  { value: '1:1', label: '1:1 正方形' },
+  { value: '2:3', label: '2:3 竖向' },
+  { value: '3:2', label: '3:2 横向' },
+  { value: '3:4', label: '3:4 竖向' },
+  { value: '4:3', label: '4:3 标准' },
+  { value: '4:5', label: '4:5 社交' },
+  { value: '5:4', label: '5:4 横社交' },
+  { value: '9:16', label: '9:16 竖屏' },
+  { value: '16:9', label: '16:9 宽屏' },
+  { value: '21:9', label: '21:9 超宽屏' },
+];
+
 const COUNT_OPTIONS = [
   { value: 1, label: '1 张' },
   { value: 2, label: '2 张' },
@@ -97,6 +110,8 @@ const IMAGE_SIZE_OPTIONS = [
 const FLASH_ONLY_SIZE_OPTIONS = [
   { value: '512', label: '512' },
 ];
+
+const FLASH_ONLY_ASPECT_RATIOS = new Set(['1:4', '4:1', '1:8', '8:1']);
 
 function SelectField({
   label,
@@ -197,6 +212,8 @@ function NumberField({
 }
 
 export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDrawerProps) {
+  const isFlashModel = settings.model === 'gemini-3.1-flash-image-preview';
+
   const update = <K extends keyof ImageChatSettings>(key: K, value: ImageChatSettings[K]) => {
     onChange({ ...settings, [key]: value });
   };
@@ -253,12 +270,24 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                     key={model.value}
                     type="button"
                     onClick={() => {
-                      updatePartial({
+                      const next: Partial<ImageChatSettings> = {
                         model: model.value,
-                        // 切换到非 Flash 模型时关闭图片搜索
-                        ...(model.value !== 'gemini-3.1-flash-image-preview'
-                          ? { enableImageSearch: false }
-                          : {}),
+                      };
+
+                      if (model.value !== 'gemini-3.1-flash-image-preview') {
+                        next.enableImageSearch = false;
+
+                        if (settings.imageSize === '512') {
+                          next.imageSize = '';
+                        }
+
+                        if (settings.aspectRatio && FLASH_ONLY_ASPECT_RATIOS.has(settings.aspectRatio)) {
+                          next.aspectRatio = '1:1';
+                        }
+                      }
+
+                      updatePartial({
+                        ...next,
                       });
                     }}
                     className={cn(
@@ -281,12 +310,29 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
 
             <div className="border-t border-gray-200 dark:border-gray-700" />
 
+            <div className="space-y-2">
+              <ToggleField
+                label="专业模式（14 张参考图）"
+                checked={settings.professionalMode ?? false}
+                onChange={(v) => update('professionalMode', v)}
+              />
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
+                {settings.professionalMode
+                  ? (isFlashModel
+                    ? 'Flash 配额：最多 10 张对象图 + 4 张角色图（总上限 14）'
+                    : 'Pro 配额：最多 6 张高保真对象图 + 5 张角色图（总上限 14）')
+                  : '默认模式：最多 4 张参考图，速度和稳定性更好'}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-700" />
+
             {/* Basic Settings */}
             <SelectField
               label="宽高比"
               value={settings.aspectRatio || '1:1'}
               onChange={(v) => update('aspectRatio', v)}
-              options={ASPECT_RATIO_OPTIONS}
+              options={isFlashModel ? ASPECT_RATIO_OPTIONS : PRO_ASPECT_RATIO_OPTIONS}
             />
 
             <SelectField
@@ -301,7 +347,7 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               value={settings.imageSize || ''}
               onChange={(v) => update('imageSize', v)}
               options={
-                settings.model === 'gemini-3.1-flash-image-preview'
+                isFlashModel
                   ? [IMAGE_SIZE_OPTIONS[0], ...FLASH_ONLY_SIZE_OPTIONS, ...IMAGE_SIZE_OPTIONS.slice(1)]
                   : IMAGE_SIZE_OPTIONS
               }
@@ -379,39 +425,47 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
             <div className="border-t border-gray-200 dark:border-gray-700" />
 
             {/* Thinking / Reasoning Settings */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                思考级别
-              </label>
-              <div className="space-y-2">
-                {THINKING_LEVEL_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => update('thinkingLevel', option.value)}
-                    className={cn(
-                      'w-full text-left p-3 rounded-lg border-2 transition-colors',
-                      settings.thinkingLevel === option.value
-                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                    )}
-                  >
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {option.label}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {option.description}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {isFlashModel ? (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                    思考级别
+                  </label>
+                  <div className="space-y-2">
+                    {THINKING_LEVEL_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => update('thinkingLevel', option.value)}
+                        className={cn(
+                          'w-full text-left p-3 rounded-lg border-2 transition-colors',
+                          settings.thinkingLevel === option.value
+                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                        )}
+                      >
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">
+                          {option.label}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {option.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <ToggleField
-              label="显示思考过程"
-              checked={settings.includeThoughts || false}
-              onChange={(v) => update('includeThoughts', v)}
-            />
+                <ToggleField
+                  label="显示思考过程"
+                  checked={settings.includeThoughts || false}
+                  onChange={(v) => update('includeThoughts', v)}
+                />
+              </>
+            ) : (
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
+                Pro 模型内置思考流程，当前版本不提供思考开关。
+              </div>
+            )}
 
             <div className="border-t border-gray-200 dark:border-gray-700" />
 
@@ -456,7 +510,7 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                   });
                 }}
               />
-              {settings.enableGoogleSearch && settings.model === 'gemini-3.1-flash-image-preview' && (
+              {settings.enableGoogleSearch && isFlashModel && (
                 <ToggleField
                   label="Google 图片搜索"
                   checked={settings.enableImageSearch || false}

@@ -8,13 +8,40 @@ import type {
 import { chatImageGeneration } from '../lib/gemini';
 import { stripDataUrlPrefix } from '../lib/utils';
 
+const SETTINGS_STORAGE_KEY = 'ai-studio:image-chat-settings:v1';
+const SETTINGS_EVENT_NAME = 'ai-studio:image-chat-settings-updated';
+
 const DEFAULT_SETTINGS: ImageChatSettings = {
   model: 'gemini-3.1-flash-image-preview',
+  professionalMode: false,
   aspectRatio: '1:1',
   numberOfImages: 1,
   enhancePrompt: true,
   language: 'auto',
 };
+
+function readSettingsFromStorage(): ImageChatSettings {
+  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<ImageChatSettings>;
+    return { ...DEFAULT_SETTINGS, ...parsed };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+function persistSettings(settings: ImageChatSettings): void {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // ignore storage write errors
+  }
+}
 
 interface UseImageChatReturn {
   messages: ChatMessage[];
@@ -31,7 +58,9 @@ export function useImageChat(): UseImageChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<ImageChatSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettingsState] = useState<ImageChatSettings>(() =>
+    readSettingsFromStorage()
+  );
   const [lastInteractionId, setLastInteractionId] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -42,6 +71,47 @@ export function useImageChat(): UseImageChatReturn {
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const handleSettingsEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<ImageChatSettings>;
+      if (customEvent.detail) {
+        setSettingsState(customEvent.detail);
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_STORAGE_KEY) {
+        setSettingsState(readSettingsFromStorage());
+      }
+    };
+
+    window.addEventListener(SETTINGS_EVENT_NAME, handleSettingsEvent as EventListener);
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener(SETTINGS_EVENT_NAME, handleSettingsEvent as EventListener);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  const setSettings: React.Dispatch<React.SetStateAction<ImageChatSettings>> = useCallback(
+    (value) => {
+      setSettingsState((prev) => {
+        const next = typeof value === 'function'
+          ? (value as (prevState: ImageChatSettings) => ImageChatSettings)(prev)
+          : value;
+
+        persistSettings(next);
+        window.dispatchEvent(
+          new CustomEvent<ImageChatSettings>(SETTINGS_EVENT_NAME, { detail: next })
+        );
+
+        return next;
+      });
+    },
+    []
+  );
 
   const send = useCallback(
     async (content: string, attachments?: string[]) => {

@@ -11,7 +11,7 @@ interface SelectedImage {
 }
 
 export function ImageChat() {
-  const { messages, isLoading, send } = useImageChat();
+  const { messages, isLoading, send, settings } = useImageChat();
   const [selectedImage, setSelectedImage] = useState<SelectedImage | null>(null);
   const [previewImage, setPreviewImage] = useState<SelectedImage | null>(null);
 
@@ -27,6 +27,8 @@ export function ImageChat() {
     setPreviewImage(image);
   }, []);
 
+  const maxAttachments = settings.professionalMode ? 14 : 4;
+
   return (
     <div className="flex flex-col h-full">
       {/* Main content area */}
@@ -38,7 +40,11 @@ export function ImageChat() {
             isLoading={isLoading}
             onImageSelect={handleImageSelect}
           />
-          <ChatInput onSend={handleSend} isLoading={isLoading} />
+          <ChatInput
+            onSend={handleSend}
+            isLoading={isLoading}
+            maxAttachments={maxAttachments}
+          />
         </div>
 
         {/* Image preview panel (right side, hidden on mobile) */}
