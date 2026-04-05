@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X, Images } from 'lucide-react';
 import { ChatMessageList } from '../../../components/image/ChatMessageList';
@@ -11,6 +11,13 @@ interface SelectedImage {
   base64: string;
   mimeType: string;
 }
+
+const toValidIndex = (index: number | null, length: number): number | null => {
+  if (index === null || index < 0 || index >= length) {
+    return null;
+  }
+  return index;
+};
 
 export function ImageChat() {
   const { messages, isLoading, send } = useOutletContext<LayoutOutletContext>();
@@ -25,40 +32,41 @@ export function ImageChat() {
     [messages]
   );
 
-  useEffect(() => {
-    if (selectedIndex !== null && selectedIndex >= conversationImages.length) {
-      setSelectedIndex(null);
-    }
-    if (previewIndex !== null && previewIndex >= conversationImages.length) {
-      setPreviewIndex(null);
-    }
-  }, [conversationImages.length, previewIndex, selectedIndex]);
+  const safeSelectedIndex = toValidIndex(selectedIndex, conversationImages.length);
+  const safePreviewIndex = toValidIndex(previewIndex, conversationImages.length);
 
-  const handleSend = useCallback((content: string, attachments?: string[]) => {
-    send(content, attachments);
-  }, [send]);
+  const handleSend = useCallback(
+    (content: string, attachments?: string[]) => {
+      send(content, attachments);
+    },
+    [send]
+  );
 
   const handleImageSelect = useCallback((_image: SelectedImage, index: number) => {
     setSelectedIndex(index);
     setPreviewIndex(index);
   }, []);
 
-  const selectedImage = selectedIndex !== null ? conversationImages[selectedIndex] : null;
-  const previewImage = previewIndex !== null ? conversationImages[previewIndex] : null;
+  const selectedImage = safeSelectedIndex !== null ? conversationImages[safeSelectedIndex] : null;
+  const previewImage = safePreviewIndex !== null ? conversationImages[safePreviewIndex] : null;
 
-  const hasPrevious = selectedIndex !== null && selectedIndex > 0;
-  const hasNext = selectedIndex !== null && selectedIndex < conversationImages.length - 1;
-  const hasPreviewPrevious = previewIndex !== null && previewIndex > 0;
-  const hasPreviewNext = previewIndex !== null && previewIndex < conversationImages.length - 1;
+  const hasPrevious = safeSelectedIndex !== null && safeSelectedIndex > 0;
+  const hasNext = safeSelectedIndex !== null && safeSelectedIndex < conversationImages.length - 1;
+  const hasPreviewPrevious = safePreviewIndex !== null && safePreviewIndex > 0;
+  const hasPreviewNext = safePreviewIndex !== null && safePreviewIndex < conversationImages.length - 1;
 
   const openPrevious = useCallback(() => {
-    setSelectedIndex((prev) => (prev !== null && prev > 0 ? prev - 1 : prev));
+    setSelectedIndex((prev) => {
+      if (prev === null) return prev;
+      return Math.max(prev - 1, 0);
+    });
   }, []);
 
   const openNext = useCallback(() => {
-    setSelectedIndex((prev) =>
-      prev !== null && prev < conversationImages.length - 1 ? prev + 1 : prev
-    );
+    setSelectedIndex((prev) => {
+      if (prev === null) return prev;
+      return Math.min(prev + 1, Math.max(conversationImages.length - 1, 0));
+    });
   }, [conversationImages.length]);
 
   const openPreviewPrevious = useCallback(() => {
@@ -107,7 +115,7 @@ export function ImageChat() {
                   src={`data:${selectedImage.mimeType};base64,${selectedImage.base64}`}
                   alt="预览图片"
                   className="h-auto w-full cursor-zoom-in object-contain"
-                  onClick={() => setPreviewIndex(selectedIndex)}
+                  onClick={() => setPreviewIndex(safeSelectedIndex)}
                 />
               </div>
 
@@ -141,7 +149,7 @@ export function ImageChat() {
                     setPreviewIndex(index);
                   }}
                   className={`overflow-hidden rounded-lg border ${
-                    selectedIndex === index
+                    safeSelectedIndex === index
                       ? 'border-primary-500 ring-2 ring-primary-400/40'
                       : 'border-black/10 dark:border-white/10'
                   }`}
@@ -184,8 +192,9 @@ export function ImageChat() {
 
       {previewImage && (
         <ImagePreviewModal
+          key={`${safePreviewIndex ?? 0}-${previewImage.base64.slice(0, 24)}`}
           image={previewImage}
-          currentIndex={previewIndex ?? 0}
+          currentIndex={safePreviewIndex ?? 0}
           total={conversationImages.length}
           onPrevious={hasPreviewPrevious ? openPreviewPrevious : undefined}
           onNext={hasPreviewNext ? openPreviewNext : undefined}

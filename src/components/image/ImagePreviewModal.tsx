@@ -72,6 +72,19 @@ export function ImagePreviewModal({
     startTouch: { x: 0, y: 0 },
   });
 
+  const clearInteractions = useCallback(() => {
+    dragStateRef.current = null;
+    touchRef.current.mode = 'none';
+    setIsDragging(false);
+    setIsTouchInteracting(false);
+  }, []);
+
+  const resetToMinZoom = useCallback(() => {
+    setScale(MIN_SCALE);
+    setOffset({ x: 0, y: 0 });
+    clearInteractions();
+  }, [clearInteractions]);
+
   const toCenterCoords = useCallback((clientX: number, clientY: number): Point => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return { x: clientX, y: clientY };
@@ -81,41 +94,55 @@ export function ImagePreviewModal({
     };
   }, []);
 
-  const zoomAt = useCallback((targetScale: number, focal: Point) => {
-    setScale((prevScale) => {
-      const nextScale = clampScale(targetScale);
-      if (nextScale === prevScale) return prevScale;
+  const zoomAt = useCallback(
+    (targetScale: number, focal: Point) => {
+      setScale((prevScale) => {
+        const nextScale = clampScale(targetScale);
+        if (nextScale === prevScale) return prevScale;
 
-      const ratio = nextScale / prevScale;
-      setOffset((prevOffset) => ({
-        x: prevOffset.x * ratio + focal.x * (1 - ratio),
-        y: prevOffset.y * ratio + focal.y * (1 - ratio),
-      }));
+        if (nextScale <= MIN_SCALE) {
+          resetToMinZoom();
+          return MIN_SCALE;
+        }
 
-      return nextScale;
-    });
-  }, []);
+        const ratio = nextScale / prevScale;
+        setOffset((prevOffset) => ({
+          x: prevOffset.x * ratio + focal.x * (1 - ratio),
+          y: prevOffset.y * ratio + focal.y * (1 - ratio),
+        }));
 
-  const zoomByStep = useCallback((delta: number) => {
-    zoomAt(scale + delta, { x: 0, y: 0 });
-  }, [scale, zoomAt]);
+        return nextScale;
+      });
+    },
+    [resetToMinZoom]
+  );
+
+  const zoomByStep = useCallback(
+    (delta: number) => {
+      zoomAt(scale + delta, { x: 0, y: 0 });
+    },
+    [scale, zoomAt]
+  );
 
   const handleDownload = useCallback(() => {
     downloadBase64Image(image.base64, image.mimeType, `ai-image-${Date.now()}.png`);
   }, [image]);
 
-  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLImageElement>) => {
-    if (scale <= 1) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragStateRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      startOffset: offset,
-    };
-    setIsDragging(true);
-  }, [offset, scale]);
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLImageElement>) => {
+      if (scale <= 1) return;
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      dragStateRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        startOffset: offset,
+      };
+      setIsDragging(true);
+    },
+    [offset, scale]
+  );
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLImageElement>) => {
     const drag = dragStateRef.current;
@@ -127,116 +154,119 @@ export function ImagePreviewModal({
     });
   }, []);
 
-  const handlePointerEnd = useCallback((e: React.PointerEvent<HTMLImageElement>) => {
-    const drag = dragStateRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-    dragStateRef.current = null;
-    setIsDragging(false);
-  }, []);
+  const handlePointerEnd = useCallback(
+    (e: React.PointerEvent<HTMLImageElement>) => {
+      const drag = dragStateRef.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      dragStateRef.current = null;
+      setIsDragging(false);
+    },
+    []
+  );
 
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLImageElement>) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
-    e.preventDefault();
-    const focal = toCenterCoords(e.clientX, e.clientY);
-    const direction = e.deltaY > 0 ? -0.2 : 0.2;
-    zoomAt(scale + direction, focal);
-  }, [scale, toCenterCoords, zoomAt]);
-
-  const handleTouchStart = useCallback((e: React.TouchEvent<HTMLImageElement>) => {
-    if (e.touches.length === 2) {
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLImageElement>) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      const a = e.touches[0];
-      const b = e.touches[1];
-      const midpoint = getTouchMidpoint(a, b);
-      touchRef.current = {
-        mode: 'pinch',
-        startScale: scale,
-        startOffset: offset,
-        startDistance: getTouchDistance(a, b),
-        startMidpoint: toCenterCoords(midpoint.x, midpoint.y),
-        startTouch: { x: 0, y: 0 },
-      };
-      setIsTouchInteracting(true);
-      return;
-    }
+      const focal = toCenterCoords(e.clientX, e.clientY);
+      const direction = e.deltaY > 0 ? -0.2 : 0.2;
+      zoomAt(scale + direction, focal);
+    },
+    [scale, toCenterCoords, zoomAt]
+  );
 
-    if (e.touches.length === 1 && scale > 1) {
-      const t = e.touches[0];
-      touchRef.current = {
-        mode: 'pan',
-        startScale: scale,
-        startOffset: offset,
-        startDistance: 0,
-        startMidpoint: { x: 0, y: 0 },
-        startTouch: { x: t.clientX, y: t.clientY },
-      };
-      setIsTouchInteracting(true);
-    }
-  }, [offset, scale, toCenterCoords]);
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLImageElement>) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const a = e.touches[0];
+        const b = e.touches[1];
+        const midpoint = getTouchMidpoint(a, b);
+        touchRef.current = {
+          mode: 'pinch',
+          startScale: scale,
+          startOffset: offset,
+          startDistance: getTouchDistance(a, b),
+          startMidpoint: toCenterCoords(midpoint.x, midpoint.y),
+          startTouch: { x: 0, y: 0 },
+        };
+        setIsTouchInteracting(true);
+        return;
+      }
 
-  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLImageElement>) => {
-    const state = touchRef.current;
+      if (e.touches.length === 1 && scale > 1) {
+        const t = e.touches[0];
+        touchRef.current = {
+          mode: 'pan',
+          startScale: scale,
+          startOffset: offset,
+          startDistance: 0,
+          startMidpoint: { x: 0, y: 0 },
+          startTouch: { x: t.clientX, y: t.clientY },
+        };
+        setIsTouchInteracting(true);
+      }
+    },
+    [offset, scale, toCenterCoords]
+  );
 
-    if (state.mode === 'pinch' && e.touches.length === 2) {
-      e.preventDefault();
-      const a = e.touches[0];
-      const b = e.touches[1];
-      const midpoint = getTouchMidpoint(a, b);
-      const currentMidpoint = toCenterCoords(midpoint.x, midpoint.y);
-      const distance = getTouchDistance(a, b);
-      const ratio = state.startDistance > 0 ? distance / state.startDistance : 1;
-      const nextScale = clampScale(state.startScale * ratio);
-      const scaleRatio = nextScale / state.startScale;
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLImageElement>) => {
+      const state = touchRef.current;
 
-      const zoomOffset = {
-        x: state.startOffset.x * scaleRatio + state.startMidpoint.x * (1 - scaleRatio),
-        y: state.startOffset.y * scaleRatio + state.startMidpoint.y * (1 - scaleRatio),
-      };
+      if (state.mode === 'pinch' && e.touches.length === 2) {
+        e.preventDefault();
+        const a = e.touches[0];
+        const b = e.touches[1];
+        const midpoint = getTouchMidpoint(a, b);
+        const currentMidpoint = toCenterCoords(midpoint.x, midpoint.y);
+        const distance = getTouchDistance(a, b);
+        const ratio = state.startDistance > 0 ? distance / state.startDistance : 1;
+        const nextScale = clampScale(state.startScale * ratio);
 
-      setScale(nextScale);
-      setOffset({
-        x: zoomOffset.x + (currentMidpoint.x - state.startMidpoint.x),
-        y: zoomOffset.y + (currentMidpoint.y - state.startMidpoint.y),
-      });
-      return;
-    }
+        if (nextScale <= MIN_SCALE) {
+          resetToMinZoom();
+          return;
+        }
 
-    if (state.mode === 'pan' && e.touches.length === 1 && scale > 1) {
-      e.preventDefault();
-      const t = e.touches[0];
-      setOffset({
-        x: state.startOffset.x + (t.clientX - state.startTouch.x),
-        y: state.startOffset.y + (t.clientY - state.startTouch.y),
-      });
-    }
-  }, [scale, toCenterCoords]);
+        const scaleRatio = nextScale / state.startScale;
+        const zoomOffset = {
+          x: state.startOffset.x * scaleRatio + state.startMidpoint.x * (1 - scaleRatio),
+          y: state.startOffset.y * scaleRatio + state.startMidpoint.y * (1 - scaleRatio),
+        };
+
+        setScale(nextScale);
+        setOffset({
+          x: zoomOffset.x + (currentMidpoint.x - state.startMidpoint.x),
+          y: zoomOffset.y + (currentMidpoint.y - state.startMidpoint.y),
+        });
+        return;
+      }
+
+      if (state.mode === 'pan' && e.touches.length === 1 && scale > 1) {
+        e.preventDefault();
+        const t = e.touches[0];
+        setOffset({
+          x: state.startOffset.x + (t.clientX - state.startTouch.x),
+          y: state.startOffset.y + (t.clientY - state.startTouch.y),
+        });
+      }
+    },
+    [resetToMinZoom, scale, toCenterCoords]
+  );
 
   const handleTouchEnd = useCallback(() => {
     touchRef.current.mode = 'none';
     setIsTouchInteracting(false);
   }, []);
 
-  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) onClose();
-  }, [onClose]);
-
-  useEffect(() => {
-    setScale(1);
-    setOffset({ x: 0, y: 0 });
-    dragStateRef.current = null;
-    setIsDragging(false);
-  }, [image.base64, image.mimeType]);
-
-  useEffect(() => {
-    if (scale <= 1) {
-      setOffset({ x: 0, y: 0 });
-      dragStateRef.current = null;
-      setIsDragging(false);
-      touchRef.current.mode = 'none';
-      setIsTouchInteracting(false);
-    }
-  }, [scale]);
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === e.currentTarget) onClose();
+    },
+    [onClose]
+  );
 
   useEffect(() => {
     const root = document.documentElement;
@@ -336,6 +366,7 @@ export function ImagePreviewModal({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
+          onLoad={resetToMinZoom}
         />
       </div>
 
@@ -363,9 +394,9 @@ export function ImagePreviewModal({
           >
             <ZoomIn className="h-4 w-4" />
           </button>
+
           <div className="mx-1 h-5 w-px bg-white/30" />
-          <span className="min-w-[3.6rem] text-center text-xs tabular-nums text-white/85">{currentIndex + 1}/{total}</span>
-          <div className="mx-1 h-5 w-px bg-white/30" />
+
           <button
             type="button"
             onClick={handleDownload}
@@ -374,6 +405,12 @@ export function ImagePreviewModal({
           >
             <Download className="h-4 w-4" />
           </button>
+
+          <div className="mx-1 h-5 w-px bg-white/30" />
+
+          <span className="min-w-[3.6rem] text-center text-xs tabular-nums text-white/85">
+            {currentIndex + 1}/{total}
+          </span>
         </div>
       </div>
     </div>

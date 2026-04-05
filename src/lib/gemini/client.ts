@@ -1,17 +1,19 @@
 import { GoogleGenAI } from '@google/genai';
+import type { Candidate, GenerateContentResponse, Part, Tool } from '@google/genai';
 import type {
+  AssistantResponsePart,
+  GeneratedImage,
   ImageGenerationRequest,
   ImageGenerationResponse,
-  GeneratedImage,
-  AssistantResponsePart,
+  ImageModel,
   ResponseModality,
+  TextToImageRequest,
 } from '../../types';
-import { stripDataUrlPrefix } from '../utils';
 import { pushDevLog } from '../devConsole';
+import { stripDataUrlPrefix } from '../utils';
 
-// Retry configuration
 const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 2000; // 2 seconds base delay
+const RETRY_DELAY_MS = 2000;
 
 type ImageMimeType =
   | 'image/png'
@@ -32,12 +34,21 @@ type ChatContent = {
   parts: ContentPart[];
 };
 
-const summarizeContentPart = (part: any) => {
-  if (part?.type === 'text') {
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null;
+};
+
+const summarizeContentPart = (part: unknown) => {
+  if (!isRecord(part)) {
+    return { type: typeof part };
+  }
+
+  if (part.type === 'text') {
     const text = String(part.text ?? '');
     return { type: 'text', textLength: text.length };
   }
-  if (part?.type === 'image' && part.inlineData) {
+
+  if (part.type === 'image' && isRecord(part.inlineData)) {
     const data = String(part.inlineData.data ?? '');
     return {
       type: 'image',
@@ -45,7 +56,8 @@ const summarizeContentPart = (part: any) => {
       base64Length: data.length,
     };
   }
-  return { type: String(part?.type ?? 'unknown') };
+
+  return { type: String(part.type ?? 'unknown') };
 };
 
 const summarizeContentsForLog = (contents: unknown) => {
@@ -58,10 +70,10 @@ const summarizeContentsForLog = (contents: unknown) => {
 
   return {
     kind: 'list',
-    items: contents.map((item: any) => {
-      if (item && typeof item === 'object' && 'role' in item && Array.isArray(item.parts)) {
+    items: contents.map((item) => {
+      if (isRecord(item) && Array.isArray(item.parts)) {
         return {
-          role: String(item.role),
+          role: String(item.role ?? 'unknown'),
           parts: item.parts.map(summarizeContentPart),
         };
       }
@@ -70,49 +82,60 @@ const summarizeContentsForLog = (contents: unknown) => {
   };
 };
 
-const summarizeResponseForLog = (response: any) => {
-  const candidates = Array.isArray(response?.candidates) ? response.candidates : [];
+const extractCandidates = (response: GenerateContentResponse): Candidate[] => {
+  return Array.isArray(response.candidates) ? response.candidates : [];
+};
+
+const summarizeResponseForLog = (response: GenerateContentResponse) => {
+  const candidates = extractCandidates(response);
+
   return {
     candidateCount: candidates.length,
-    candidates: candidates.map((candidate: any, idx: number) => {
-      const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
-      const summarizedParts = parts.map((part: any, partIndex: number) => {
-        if (part?.inlineData) {
+    candidates: candidates.map((candidate, idx) => {
+      const parts = Array.isArray(candidate.content?.parts) ? candidate.content.parts : [];
+
+      const summarizedParts = parts.map((part, partIndex) => {
+        if (part.inlineData) {
           const mimeType = String(part.inlineData.mimeType ?? '');
           const data = String(part.inlineData.data ?? '');
           return {
             partIndex,
             source: 'inlineData',
-            thought: Boolean(part?.thought),
+            thought: Boolean(part.thought),
             mimeType,
             dataLength: data.length,
             dataHead: data.slice(0, 24),
           };
         }
-        if (part?.fileData?.fileUri) {
+
+        if (part.fileData?.fileUri) {
           const uri = String(part.fileData.fileUri);
           const mimeMatch = uri.match(/^data:([^;]+);base64,/i);
           return {
             partIndex,
             source: 'fileData',
-            thought: Boolean(part?.thought),
+            thought: Boolean(part.thought),
             mimeType: mimeMatch ? mimeMatch[1] : '',
             uriLength: uri.length,
             uriHead: uri.slice(0, 64),
           };
         }
+
         return {
           partIndex,
-          source: part?.text !== undefined ? 'text' : 'other',
-          thought: Boolean(part?.thought),
+          source: part.text !== undefined ? 'text' : 'other',
+          thought: Boolean(part.thought),
         };
       });
-      const imagePartCount = summarizedParts.filter(
-        (part: any) => typeof part.mimeType === 'string' && part.mimeType.startsWith('image/')
-      ).length;
+
+      const imagePartCount = summarizedParts.filter((part) => {
+        if (!('mimeType' in part)) return false;
+        return typeof part.mimeType === 'string' && part.mimeType.startsWith('image/');
+      }).length;
+
       return {
         index: idx,
-        finishReason: candidate?.finishReason,
+        finishReason: candidate.finishReason,
         partCount: parts.length,
         imagePartCount,
         parts: summarizedParts,
@@ -123,6 +146,42 @@ const summarizeResponseForLog = (response: any) => {
 
 const toGeminiThinkingLevel = (thinkingLevel: 'minimal' | 'high'): 'LOW' | 'HIGH' => {
   return thinkingLevel === 'high' ? 'HIGH' : 'LOW';
+};
+
+const createAbortError = (): Error => {
+  const error = new Error('Aborted');
+  error.name = 'AbortError';
+  return error;
+};
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+};
+
+const delayWithAbort = (delay: number, signal?: AbortSignal): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(createAbortError());
+      return;
+    }
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(createAbortError());
+    };
+
+    const timer = setTimeout(() => {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
+      resolve();
+    }, delay);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 };
 
 const getApiKey = (): string => {
@@ -150,45 +209,41 @@ const getClient = (): GoogleGenAI => {
   return client;
 };
 
-// Retry with exponential backoff
 const withRetry = async <T>(
   fn: () => Promise<T>,
-  operationName: string
+  operationName: string,
+  signal?: AbortSignal
 ): Promise<T> => {
   let lastError: Error | null = null;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try {
+      throwIfAborted(signal);
       return await fn();
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
 
-      // Don't retry if aborted
       if (lastError.name === 'AbortError') {
         throw new Error(`${operationName} 请求已取消`);
       }
 
-      // Don't retry on last attempt
       if (attempt === MAX_RETRIES) {
         break;
       }
 
-      // Exponential backoff: 2s, 4s
       const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
-      console.warn(`${operationName} 请求失败，${delay / 1000}秒后重试（${attempt + 1}/${MAX_RETRIES}）:`, lastError.message);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      console.warn(
+        `${operationName} 请求失败，${delay / 1000}秒后重试（${attempt + 1}/${MAX_RETRIES}）:`,
+        lastError.message
+      );
+      await delayWithAbort(delay, signal);
     }
   }
 
-  throw lastError || new Error(`${operationName} 请求失败`);
+  throw lastError ?? new Error(`${operationName} 请求失败`);
 };
 
-/**
- * Build contents for generateContent API based on request type
- */
-const buildContents = (
-  request: ImageGenerationRequest
-): string | ContentPart[] => {
+const buildContents = (request: ImageGenerationRequest): string | ContentPart[] => {
   switch (request.type) {
     case 'text-to-image':
       return request.prompt;
@@ -200,7 +255,7 @@ const buildContents = (
           type: 'image' as const,
           inlineData: {
             data: stripDataUrlPrefix(img),
-            mimeType: (request.referenceImageMimeTypes?.[i] || 'image/png') as ImageMimeType,
+            mimeType: (request.referenceImageMimeTypes?.[i] ?? 'image/png') as ImageMimeType,
           },
         })),
       ];
@@ -214,7 +269,7 @@ const buildContents = (
           type: 'image' as const,
           inlineData: {
             data: stripDataUrlPrefix(img),
-            mimeType: (request.referenceImageMimeTypes?.[i] || 'image/png') as ImageMimeType,
+            mimeType: (request.referenceImageMimeTypes?.[i] ?? 'image/png') as ImageMimeType,
           },
         })),
       ];
@@ -233,51 +288,39 @@ const buildContents = (
     }
 
     default: {
-      const _exhaustiveCheck: never = request;
-      throw new Error(`Unsupported request type: ${_exhaustiveCheck}`);
+      const exhaustiveCheck: never = request;
+      throw new Error(`Unsupported request type: ${String(exhaustiveCheck)}`);
     }
   }
 };
 
-/**
- * Build generation config for generateContent API
- */
 const buildGenerationConfig = (request: ImageGenerationRequest) => {
   const config: Record<string, unknown> = {};
 
+  if (typeof request.numberOfImages === 'number' && Number.isFinite(request.numberOfImages)) {
+    config.candidateCount = request.numberOfImages;
+  }
+  if (request.seed !== undefined) {
+    config.seed = request.seed;
+  }
+
   if (request.type === 'text-to-image') {
-    if (typeof request.numberOfImages === 'number' && Number.isFinite(request.numberOfImages)) {
-      config.candidateCount = request.numberOfImages;
-    }
-    if (request.seed !== undefined) config.seed = request.seed;
-    
-    // Image-specific config
     const imageConfig: Record<string, unknown> = {};
     if (request.aspectRatio) imageConfig.aspectRatio = request.aspectRatio;
     if (request.imageSize) imageConfig.imageSize = request.imageSize;
     config.imageConfig = imageConfig;
-    
-    // Thinking config
+
     if (request.thinkingLevel || request.includeThoughts !== undefined) {
       config.thinkingConfig = {
         thinkingLevel: toGeminiThinkingLevel(request.thinkingLevel ?? 'minimal'),
         includeThoughts: Boolean(request.includeThoughts),
       };
     }
-  } else {
-    // image-to-image and inpainting
-    if (typeof request.numberOfImages === 'number' && Number.isFinite(request.numberOfImages)) {
-      config.candidateCount = request.numberOfImages;
-    }
-    if (request.seed !== undefined) config.seed = request.seed;
   }
 
   return config;
 };
 
-/**
- * Normalize chat config into Gemini generation config shape.
- */
 const normalizeChatGenerationConfig = (config: Record<string, unknown>) => {
   const normalized: Record<string, unknown> = {};
 
@@ -303,15 +346,13 @@ const normalizeChatGenerationConfig = (config: Record<string, unknown>) => {
   return normalized;
 };
 
-/**
- * Build tools array for generateContent API
- */
 const buildTools = (
-  model?: string,
+  model?: ImageModel,
   enableGoogleSearch?: boolean,
   enableImageSearch?: boolean
-): any[] | undefined => {
+): Tool[] | undefined => {
   if (!enableGoogleSearch) return undefined;
+
   const canUseImageSearch = model === 'gemini-3.1-flash-image-preview';
 
   if (enableImageSearch && canUseImageSearch) {
@@ -330,50 +371,49 @@ const buildTools = (
   return [{ googleSearch: {} }];
 };
 
-/**
- * Extract images from generateContent response
- */
+const extractImageFromPart = (part: Part): GeneratedImage | null => {
+  if (part.inlineData) {
+    const mimeType = String(part.inlineData.mimeType ?? 'image/png');
+    if (!mimeType.startsWith('image/')) return null;
+
+    const base64 = String(part.inlineData.data ?? '');
+    if (!base64) return null;
+
+    return { base64, mimeType };
+  }
+
+  if (part.fileData?.fileUri) {
+    const uri = String(part.fileData.fileUri);
+    const mimeMatch = uri.match(/^data:([^;]+);base64,/i);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+    if (!mimeType.startsWith('image/')) return null;
+
+    const rawBase64 = stripDataUrlPrefix(uri);
+    if (!rawBase64) return null;
+
+    return { base64: rawBase64, mimeType };
+  }
+
+  return null;
+};
+
 const extractImagesFromResponse = (
-  response: any,
+  response: GenerateContentResponse,
   imageThoughtState: 'thought' | 'final'
 ): GeneratedImage[] => {
   const images: GeneratedImage[] = [];
 
-  if (!response.candidates || !Array.isArray(response.candidates)) return images;
-
-  for (const candidate of response.candidates) {
-    if (!candidate.content?.parts) continue;
+  for (const candidate of extractCandidates(response)) {
+    if (!Array.isArray(candidate.content?.parts)) continue;
 
     for (const part of candidate.content.parts) {
-      const isThoughtPart = Boolean(part?.thought);
-      const matchThoughtState =
-        imageThoughtState === 'thought' ? isThoughtPart : !isThoughtPart;
+      const isThoughtPart = Boolean(part.thought);
+      const matchThoughtState = imageThoughtState === 'thought' ? isThoughtPart : !isThoughtPart;
       if (!matchThoughtState) continue;
 
-      if (part.inlineData) {
-        const mimeType = String(part.inlineData.mimeType || 'image/png');
-        if (!mimeType.startsWith('image/')) continue;
-
-        const base64 = String(part.inlineData.data || '');
-        if (!base64) continue;
-
-        images.push({
-          base64,
-          mimeType,
-        });
-      } else if (part.fileData?.fileUri) {
-        const uri = part.fileData.fileUri;
-        const mimeMatch = uri.match(/^data:([^;]+);base64,/);
-        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-        if (!mimeType.startsWith('image/')) continue;
-
-        const rawBase64 = stripDataUrlPrefix(uri);
-        if (!rawBase64) continue;
-
-        images.push({
-          base64: rawBase64,
-          mimeType,
-        });
+      const image = extractImageFromPart(part);
+      if (image) {
+        images.push(image);
       }
     }
   }
@@ -381,23 +421,20 @@ const extractImagesFromResponse = (
   return images;
 };
 
-const extractOrderedPartsFromResponse = (response: any): AssistantResponsePart[] => {
+const extractOrderedPartsFromResponse = (response: GenerateContentResponse): AssistantResponsePart[] => {
   const orderedParts: AssistantResponsePart[] = [];
+  const candidates = extractCandidates(response);
 
-  if (!response?.candidates || !Array.isArray(response.candidates)) {
-    return orderedParts;
-  }
-
-  for (let candidateIndex = 0; candidateIndex < response.candidates.length; candidateIndex += 1) {
-    const candidate = response.candidates[candidateIndex];
-    if (!candidate?.content?.parts || !Array.isArray(candidate.content.parts)) continue;
+  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+    const candidate = candidates[candidateIndex];
+    if (!Array.isArray(candidate.content?.parts)) continue;
 
     for (let partIndex = 0; partIndex < candidate.content.parts.length; partIndex += 1) {
       const part = candidate.content.parts[partIndex];
-      const thought = Boolean(part?.thought);
+      const thought = Boolean(part.thought);
       const bucket = thought ? 'thinking' : 'main';
 
-      if (typeof part?.text === 'string') {
+      if (typeof part.text === 'string') {
         orderedParts.push({
           type: 'text',
           bucket,
@@ -410,57 +447,17 @@ const extractOrderedPartsFromResponse = (response: any): AssistantResponsePart[]
         continue;
       }
 
-      if (part?.inlineData) {
-        const mimeType = String(part.inlineData.mimeType || 'image/png');
-        const base64 = String(part.inlineData.data || '');
-        if (mimeType.startsWith('image/') && base64) {
-          orderedParts.push({
-            type: 'image',
-            bucket,
-            thought,
-            image: { base64, mimeType },
-            raw: part,
-            candidateIndex,
-            partIndex,
-          });
-        } else {
-          orderedParts.push({
-            type: 'other',
-            bucket: 'other',
-            thought,
-            raw: part,
-            candidateIndex,
-            partIndex,
-          });
-        }
-        continue;
-      }
-
-      if (part?.fileData?.fileUri) {
-        const uri = String(part.fileData.fileUri);
-        const mimeMatch = uri.match(/^data:([^;]+);base64,/);
-        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-        const base64 = stripDataUrlPrefix(uri);
-        if (mimeType.startsWith('image/') && base64) {
-          orderedParts.push({
-            type: 'image',
-            bucket,
-            thought,
-            image: { base64, mimeType },
-            raw: part,
-            candidateIndex,
-            partIndex,
-          });
-        } else {
-          orderedParts.push({
-            type: 'other',
-            bucket: 'other',
-            thought,
-            raw: part,
-            candidateIndex,
-            partIndex,
-          });
-        }
+      const image = extractImageFromPart(part);
+      if (image) {
+        orderedParts.push({
+          type: 'image',
+          bucket,
+          thought,
+          image,
+          raw: part,
+          candidateIndex,
+          partIndex,
+        });
         continue;
       }
 
@@ -494,9 +491,27 @@ const bucketTextFromOrderedParts = (
   };
 };
 
+const CHAT_GENERATION_FIELD_ALLOWLIST = new Set([
+  'numberOfImages',
+  'seed',
+  'aspectRatio',
+  'imageSize',
+  'thinkingLevel',
+  'includeThoughts',
+]);
+
+const stripNonGenerationFields = (config: Record<string, unknown>): Record<string, unknown> => {
+  return Object.fromEntries(
+    Object.entries(config).filter(([key]) => CHAT_GENERATION_FIELD_ALLOWLIST.has(key))
+  );
+};
+
+const isTextToImageRequest = (request: ImageGenerationRequest): request is TextToImageRequest => {
+  return request.type === 'text-to-image';
+};
+
 /**
- * Generate image using generateContent API
- * Supports text-to-image, image-to-image, and inpainting
+ * Execute a one-shot image generation request.
  */
 export const generateImage = async (
   request: ImageGenerationRequest,
@@ -506,10 +521,11 @@ export const generateImage = async (
 
   const contents = buildContents(request);
   const generationConfig = buildGenerationConfig(request);
+  const textToImageRequest = isTextToImageRequest(request) ? request : undefined;
   const tools = buildTools(
     request.model,
-    request.type === 'text-to-image' ? (request as any).enableGoogleSearch : undefined,
-    request.type === 'text-to-image' ? (request as any).enableImageSearch : undefined
+    textToImageRequest?.enableGoogleSearch,
+    textToImageRequest?.enableImageSearch
   );
 
   const operationName =
@@ -526,9 +542,12 @@ export const generateImage = async (
       config: {
         ...(Object.keys(generationConfig).length > 0 ? generationConfig : {}),
         ...(tools ? { tools } : {}),
-        responseModalities: request.type === 'text-to-image' && request.responseModality
-          ? (request.responseModality === 'image' ? ['IMAGE'] : ['TEXT', 'IMAGE'])
-          : ['TEXT', 'IMAGE'],
+        responseModalities:
+          request.type === 'text-to-image' && request.responseModality
+            ? request.responseModality === 'image'
+              ? ['IMAGE']
+              : ['TEXT', 'IMAGE']
+            : ['TEXT', 'IMAGE'],
       },
       ...(signal ? { signal } : {}),
     });
@@ -536,12 +555,10 @@ export const generateImage = async (
     return response;
   };
 
-  const response = await withRetry(executeRequest, operationName);
-
-  // Extract images from response
-  const orderedParts = extractOrderedPartsFromResponse(response as any);
-  const images = extractImagesFromResponse(response as any, 'final');
-  const thinkingImages = extractImagesFromResponse(response as any, 'thought');
+  const response = await withRetry(executeRequest, operationName, signal);
+  const orderedParts = extractOrderedPartsFromResponse(response);
+  const images = extractImagesFromResponse(response, 'final');
+  const thinkingImages = extractImagesFromResponse(response, 'thought');
   const { text, thinking } = bucketTextFromOrderedParts(orderedParts);
 
   return {
@@ -555,28 +572,23 @@ export const generateImage = async (
 };
 
 /**
- * Chat-style image generation with conversation history
- * Uses generateContent API
+ * Continue image generation in multi-turn chat context.
  */
 export const chatImageGeneration = async (
-  model: string,
+  model: ImageModel,
   input: string | ContentPart[] | ChatContent[],
   config: Record<string, unknown>,
   signal?: AbortSignal
 ): Promise<ImageGenerationResponse> => {
   const ai = getClient();
 
-  // Extract search settings from config
   const enableGoogleSearch = config.enableGoogleSearch as boolean | undefined;
   const enableImageSearch = config.enableImageSearch as boolean | undefined;
   const responseModality = config.responseModality as ResponseModality | undefined;
 
-  // Remove non-generation-config fields before passing to API
-  const { enableGoogleSearch: _, enableImageSearch: __, responseModality: ___, ...rawGenerationConfig } = config;
-  const generationConfig = normalizeChatGenerationConfig(rawGenerationConfig);
-
-  // Build response modalities
+  const generationConfig = normalizeChatGenerationConfig(stripNonGenerationFields(config));
   const responseModalities = responseModality === 'image' ? ['IMAGE'] : ['TEXT', 'IMAGE'];
+  const tools = buildTools(model, enableGoogleSearch, enableImageSearch);
 
   const executeRequest = async () => {
     pushDevLog('gemini.chat', 'request', 'info', {
@@ -592,9 +604,7 @@ export const chatImageGeneration = async (
       config: {
         ...generationConfig,
         responseModalities,
-        ...(buildTools(model, enableGoogleSearch, enableImageSearch)
-          ? { tools: buildTools(model, enableGoogleSearch, enableImageSearch) as any }
-          : {}),
+        ...(tools ? { tools } : {}),
       },
       ...(signal ? { signal } : {}),
     });
@@ -603,11 +613,10 @@ export const chatImageGeneration = async (
     return response;
   };
 
-  const response = await withRetry(executeRequest, '对话生成');
-
-  const orderedParts = extractOrderedPartsFromResponse(response as any);
-  const images = extractImagesFromResponse(response as any, 'final');
-  const thinkingImages = extractImagesFromResponse(response as any, 'thought');
+  const response = await withRetry(executeRequest, '对话生成', signal);
+  const orderedParts = extractOrderedPartsFromResponse(response);
+  const images = extractImagesFromResponse(response, 'final');
+  const thinkingImages = extractImagesFromResponse(response, 'thought');
   const { text, thinking } = bucketTextFromOrderedParts(orderedParts);
 
   return {
@@ -616,7 +625,7 @@ export const chatImageGeneration = async (
     thinking,
     thinkingImages,
     orderedParts,
-    model: model as any,
+    model,
   };
 };
 

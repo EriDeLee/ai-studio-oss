@@ -67,9 +67,9 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto flex h-[calc(100dvh-4rem)] w-full max-w-[1400px] min-w-0 flex-1 px-2 pb-2 pt-2 sm:px-4 sm:pb-4">
-        <div className="layout-grid">
-          <aside className="history-panel hidden lg:flex">
+      <main className="mx-auto flex h-[calc(100dvh-4rem)] min-h-0 w-full max-w-[1400px] min-w-0 flex-1 px-2 pb-2 pt-2 sm:px-4 sm:pb-4">
+        <div className="layout-grid min-h-0">
+          <aside className="history-panel hidden min-h-0 lg:flex">
             <div className="flex items-center justify-between border-b border-black/10 px-3 py-2.5 dark:border-white/10">
               <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-3)]">
                 <History className="h-3.5 w-3.5" />
@@ -112,7 +112,7 @@ export function Layout() {
             </div>
           </aside>
 
-          <div className="min-w-0">
+          <div className="flex min-h-0 min-w-0 flex-col">
             <Outlet context={chat} />
           </div>
         </div>

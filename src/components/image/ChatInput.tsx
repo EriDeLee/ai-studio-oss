@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { Send, Paperclip, X, Image as ImageIcon } from 'lucide-react';
 import { cn, readFileAsBase64 } from '../../lib/utils';
 
@@ -25,16 +25,11 @@ export function ChatInput({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    setAttachments((prev) => (prev.length > maxAttachments ? prev.slice(0, maxAttachments) : prev));
-  }, [maxAttachments]);
+  const visibleAttachments = attachments.slice(0, maxAttachments);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
-      const remainingSlots = maxAttachments - attachments.length;
-      if (remainingSlots <= 0) return;
-
-      const filesToProcess = Array.from(files).slice(0, remainingSlots);
+      const filesToProcess = Array.from(files);
 
       for (const file of filesToProcess) {
         if (!file.type.startsWith('image/')) continue;
@@ -42,13 +37,16 @@ export function ChatInput({
 
         try {
           const base64 = await readFileAsBase64(file);
-          setAttachments((prev) => [...prev, base64]);
+          setAttachments((prev) => {
+            if (prev.length >= maxAttachments) return prev;
+            return [...prev, base64];
+          });
         } catch {
           // ignore single file failure
         }
       }
     },
-    [attachments.length, maxAttachments]
+    [maxAttachments]
   );
 
   const handleDrop = useCallback(
@@ -85,13 +83,13 @@ export function ChatInput({
   }, []);
 
   const handleSend = useCallback(() => {
-    if ((!text.trim() && attachments.length === 0) || isLoading || disabled) {
+    if ((!text.trim() && visibleAttachments.length === 0) || isLoading || disabled) {
       return;
     }
-    onSend(text, attachments.length > 0 ? attachments : undefined);
+    onSend(text, visibleAttachments.length > 0 ? visibleAttachments : undefined);
     setText('');
     setAttachments([]);
-  }, [attachments, disabled, isLoading, onSend, text]);
+  }, [visibleAttachments, disabled, isLoading, onSend, text]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -103,7 +101,7 @@ export function ChatInput({
     [handleSend]
   );
 
-  const canSend = (text.trim().length > 0 || attachments.length > 0) && !isLoading && !disabled;
+  const canSend = (text.trim().length > 0 || visibleAttachments.length > 0) && !isLoading && !disabled;
 
   return (
     <div
@@ -118,9 +116,9 @@ export function ChatInput({
     >
       <div className="mx-auto w-full max-w-5xl">
         <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
-          {attachments.length > 0 && (
+          {visibleAttachments.length > 0 && (
             <div className="mb-2.5 flex gap-2 overflow-x-auto pb-1">
-              {attachments.map((img, index) => (
+              {visibleAttachments.map((img, index) => (
                 <div
                   key={index}
                   className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-black/10 dark:border-white/10"
@@ -154,14 +152,14 @@ export function ChatInput({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={attachments.length >= maxAttachments || isLoading}
+              disabled={visibleAttachments.length >= maxAttachments || isLoading}
               className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-[var(--panel)] px-3 text-sm text-[var(--text-2)] transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:hover:bg-white/10"
               aria-label="上传图片"
             >
               <Paperclip className="h-4 w-4" />
               <span className="hidden sm:inline">添加图片</span>
               <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[11px] dark:bg-white/10">
-                {attachments.length}/{maxAttachments}
+                {visibleAttachments.length}/{maxAttachments}
               </span>
             </button>
 
