@@ -17,7 +17,7 @@ const DEFAULT_CHAT_SETTINGS: ImageChatSettings = {
   aspectRatio: '1:1',
   numberOfImages: 1,
   thinkingLevel: 'minimal',
-  includeThoughts: false,
+  includeThoughts: true,
   responseModality: 'text_image',
   enableGoogleSearch: false,
   enableImageSearch: false,
@@ -324,8 +324,8 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               <div className="space-y-2 rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
                 <p className="text-xs text-[var(--text-3)]">思考输出</p>
                 <Switch
-                  label="输出思考内容"
-                  checked={settings.includeThoughts ?? false}
+                  label="显示思考内容"
+                  checked={settings.includeThoughts ?? true}
                   onChange={(value) => update('includeThoughts', value)}
                 />
               </div>

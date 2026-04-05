@@ -86,6 +86,21 @@ const extractCandidates = (response: GenerateContentResponse): Candidate[] => {
   return Array.isArray(response.candidates) ? response.candidates : [];
 };
 
+const parseThoughtFlag = (value: unknown): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') return false;
+  }
+  return false;
+};
+
+const isThoughtPart = (part: Part): boolean => {
+  return parseThoughtFlag((part as { thought?: unknown }).thought);
+};
+
 const summarizeResponseForLog = (response: GenerateContentResponse) => {
   const candidates = extractCandidates(response);
 
@@ -101,7 +116,7 @@ const summarizeResponseForLog = (response: GenerateContentResponse) => {
           return {
             partIndex,
             source: 'inlineData',
-            thought: Boolean(part.thought),
+            thought: isThoughtPart(part),
             mimeType,
             dataLength: data.length,
             dataHead: data.slice(0, 24),
@@ -114,7 +129,7 @@ const summarizeResponseForLog = (response: GenerateContentResponse) => {
           return {
             partIndex,
             source: 'fileData',
-            thought: Boolean(part.thought),
+            thought: isThoughtPart(part),
             mimeType: mimeMatch ? mimeMatch[1] : '',
             uriLength: uri.length,
             uriHead: uri.slice(0, 64),
@@ -124,7 +139,7 @@ const summarizeResponseForLog = (response: GenerateContentResponse) => {
         return {
           partIndex,
           source: part.text !== undefined ? 'text' : 'other',
-          thought: Boolean(part.thought),
+          thought: isThoughtPart(part),
         };
       });
 
@@ -224,7 +239,7 @@ const withRetry = async <T>(
       lastError = err instanceof Error ? err : new Error(String(err));
 
       if (lastError.name === 'AbortError') {
-        throw new Error(`${operationName} 请求已取消`);
+        throw lastError;
       }
 
       if (attempt === MAX_RETRIES) {
@@ -407,8 +422,8 @@ const extractImagesFromResponse = (
     if (!Array.isArray(candidate.content?.parts)) continue;
 
     for (const part of candidate.content.parts) {
-      const isThoughtPart = Boolean(part.thought);
-      const matchThoughtState = imageThoughtState === 'thought' ? isThoughtPart : !isThoughtPart;
+      const thoughtPart = isThoughtPart(part);
+      const matchThoughtState = imageThoughtState === 'thought' ? thoughtPart : !thoughtPart;
       if (!matchThoughtState) continue;
 
       const image = extractImageFromPart(part);
@@ -431,7 +446,7 @@ const extractOrderedPartsFromResponse = (response: GenerateContentResponse): Ass
 
     for (let partIndex = 0; partIndex < candidate.content.parts.length; partIndex += 1) {
       const part = candidate.content.parts[partIndex];
-      const thought = Boolean(part.thought);
+      const thought = isThoughtPart(part);
       const bucket = thought ? 'thinking' : 'main';
 
       if (typeof part.text === 'string') {
@@ -559,7 +574,8 @@ export const generateImage = async (
   const orderedParts = extractOrderedPartsFromResponse(response);
   const images = extractImagesFromResponse(response, 'final');
   const thinkingImages = extractImagesFromResponse(response, 'thought');
-  const { text, thinking } = bucketTextFromOrderedParts(orderedParts);
+  const { text: bucketedText, thinking } = bucketTextFromOrderedParts(orderedParts);
+  const text = response.text?.trim() ? response.text.trim() : bucketedText;
 
   return {
     images,
@@ -617,7 +633,8 @@ export const chatImageGeneration = async (
   const orderedParts = extractOrderedPartsFromResponse(response);
   const images = extractImagesFromResponse(response, 'final');
   const thinkingImages = extractImagesFromResponse(response, 'thought');
-  const { text, thinking } = bucketTextFromOrderedParts(orderedParts);
+  const { text: bucketedText, thinking } = bucketTextFromOrderedParts(orderedParts);
+  const text = response.text?.trim() ? response.text.trim() : bucketedText;
 
   return {
     images,

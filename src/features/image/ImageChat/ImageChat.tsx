@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X, Images } from 'lucide-react';
 import { ChatMessageList } from '../../../components/image/ChatMessageList';
@@ -6,6 +6,13 @@ import { ChatInput } from '../../../components/image/ChatInput';
 import { ImagePreviewModal } from '../../../components/image/ImagePreviewModal';
 import type { ChatAssistantMessage } from '../../../types';
 import type { LayoutOutletContext } from '../../../pages/Layout';
+
+interface EditState {
+  sessionId: string;
+  messageIndex: number;
+  content: string;
+  attachments: string[];
+}
 
 interface SelectedImage {
   base64: string;
@@ -20,9 +27,16 @@ const toValidIndex = (index: number | null, length: number): number | null => {
 };
 
 export function ImageChat() {
-  const { messages, isLoading, send } = useOutletContext<LayoutOutletContext>();
+  const { messages, isLoading, send, settings, retryFromMessage, getMessageForEdit, activeSessionId } = useOutletContext<LayoutOutletContext>();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [editState, setEditState] = useState<EditState | null>(null);
+  const activeEditState = editState?.sessionId === activeSessionId ? editState : null;
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditState(null);
+  }, [activeSessionId]);
 
   const conversationImages = useMemo(
     () =>
@@ -37,9 +51,49 @@ export function ImageChat() {
 
   const handleSend = useCallback(
     (content: string, attachments?: string[]) => {
+      if (activeEditState) {
+        const isValidEditIndex = Number.isInteger(activeEditState.messageIndex)
+          && activeEditState.messageIndex >= 0
+          && activeEditState.messageIndex < messages.length;
+
+        if (isValidEditIndex) {
+          // Use explicit base history to avoid stale state race while editing.
+          const baseMessages = messages.slice(0, activeEditState.messageIndex);
+          setEditState(null);
+          send(content, attachments, baseMessages);
+          return;
+        }
+      }
+
+      if (editState) {
+        setEditState(null);
+      }
       send(content, attachments);
     },
-    [send]
+    [activeEditState, editState, messages, send]
+  );
+
+  const handleRetry = useCallback(
+    (messageIndex: number) => {
+      setEditState(null);
+      retryFromMessage(messageIndex);
+    },
+    [retryFromMessage]
+  );
+
+  const handleEdit = useCallback(
+    (messageIndex: number) => {
+      const messageData = getMessageForEdit(messageIndex);
+      if (messageData) {
+        setEditState({
+          sessionId: activeSessionId,
+          messageIndex,
+          content: messageData.content,
+          attachments: messageData.attachments,
+        });
+      }
+    },
+    [activeSessionId, getMessageForEdit]
   );
 
   const handleImageSelect = useCallback((_image: SelectedImage, index: number) => {
@@ -94,8 +148,19 @@ export function ImageChat() {
           messages={messages}
           isLoading={isLoading}
           onImageSelect={handleImageSelect}
+          settings={settings}
+          onRetry={handleRetry}
+          onEdit={handleEdit}
         />
-        <ChatInput onSend={handleSend} isLoading={isLoading} maxAttachments={4} />
+        <ChatInput
+          key={activeEditState ? `edit-${activeEditState.sessionId}-${activeEditState.messageIndex}` : 'new'}
+          onSend={handleSend}
+          isLoading={isLoading}
+          disabled={!activeSessionId}
+          maxAttachments={4}
+          initialContent={activeEditState?.content}
+          initialAttachments={activeEditState?.attachments}
+        />
       </section>
 
       <aside className="hidden lg:flex chat-gallery-panel">

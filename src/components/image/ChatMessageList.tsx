@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
-import { Download, Copy, Sparkles, User, AlertCircle, Image as ImageIcon } from 'lucide-react';
-import type { ChatMessage, ChatUserMessage, ChatAssistantMessage } from '../../types';
+import { Download, Copy, Sparkles, User, AlertCircle, Image as ImageIcon, RotateCcw, Pencil } from 'lucide-react';
+import type { ChatMessage, ChatUserMessage, ChatAssistantMessage, ImageChatSettings } from '../../types';
 import { downloadBase64Image } from '../../lib/utils';
 
 interface ChatMessageListProps {
@@ -10,21 +10,51 @@ interface ChatMessageListProps {
     image: { base64: string; mimeType: string },
     index: number
   ) => void;
+  settings?: ImageChatSettings;
+  onRetry?: (messageIndex: number) => void;
+  onEdit?: (messageIndex: number) => void;
 }
 
 interface MessageBubbleProps {
   message: ChatMessage;
   imageStartIndex?: number;
   onImageClick?: (image: { base64: string; mimeType: string }, index: number) => void;
+  settings?: ImageChatSettings;
+  messageIndex?: number;
+  onRetry?: (messageIndex: number) => void;
+  onEdit?: (messageIndex: number) => void;
 }
 
-function UserMessage({ message }: MessageBubbleProps) {
+function UserMessage({ message, messageIndex, onRetry, onEdit }: MessageBubbleProps) {
   const msg = message as ChatUserMessage;
 
   return (
-    <div className="flex justify-end">
+    <div className="flex justify-end group">
       <div className="max-w-[92%] space-y-2">
         <div className="flex items-end gap-2 justify-end">
+          {/* Action buttons - left side of user message */}
+          <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 mr-1">
+            <button
+              type="button"
+              onClick={() => onRetry?.(messageIndex ?? -1)}
+              disabled={!onRetry || messageIndex === undefined}
+              className="p-1.5 rounded-lg text-[var(--text-3)] hover:text-primary-600 hover:bg-primary-100/50 dark:hover:bg-primary-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="重试"
+              title="重试"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onEdit?.(messageIndex ?? -1)}
+              disabled={!onEdit || messageIndex === undefined}
+              className="p-1.5 rounded-lg text-[var(--text-3)] hover:text-primary-600 hover:bg-primary-100/50 dark:hover:bg-primary-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="编辑"
+              title="编辑"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          </div>
           <div className="chat-bubble user-bubble">
             <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
           </div>
@@ -50,7 +80,7 @@ function UserMessage({ message }: MessageBubbleProps) {
   );
 }
 
-function AssistantMessage({ message, imageStartIndex = 0, onImageClick }: MessageBubbleProps) {
+function AssistantMessage({ message, imageStartIndex = 0, onImageClick, settings }: MessageBubbleProps) {
   const msg = message as ChatAssistantMessage;
 
   const handleDownload = (image: { base64: string; mimeType: string }) => {
@@ -90,17 +120,38 @@ function AssistantMessage({ message, imageStartIndex = 0, onImageClick }: Messag
                     const thinkingParts = msg.orderedParts?.filter((part) => part.bucket === 'thinking') ?? [];
                     const mainParts = msg.orderedParts?.filter((part) => part.bucket === 'main') ?? [];
                     const otherParts = msg.orderedParts?.filter((part) => part.bucket === 'other') ?? [];
+                    const shouldShowThinking = settings?.includeThoughts === true;
+                    const thinkingTextParts = thinkingParts.filter(
+                      (part) => part.type === 'text' && Boolean(part.text?.trim())
+                    );
+                    const thinkingImageParts = thinkingParts.filter(
+                      (part) => part.type === 'image' && Boolean(part.image)
+                    );
+                    const mainTextParts = mainParts.filter(
+                      (part) => part.type === 'text' && Boolean(part.text?.trim())
+                    );
+                    const shouldShowThinkingBlock = shouldShowThinking && (
+                      thinkingTextParts.length > 0 ||
+                      thinkingImageParts.length > 0 ||
+                      Boolean(msg.thinking?.trim()) ||
+                      Boolean(Array.isArray(msg.thinkingImages) && msg.thinkingImages.length > 0)
+                    );
+                    const shouldFallbackMainText = mainTextParts.length === 0 && Boolean(msg.content?.trim());
+                    const shouldFallbackThinkingText = thinkingTextParts.length === 0 && Boolean(msg.thinking?.trim());
+                    const fallbackThinkingImages = thinkingImageParts.length === 0
+                      ? (Array.isArray(msg.thinkingImages) ? msg.thinkingImages : [])
+                      : [];
                     let finalImageLocalIndex = 0;
                     return (
                       <div className="space-y-2">
-                        {thinkingParts.length > 0 && (
+                        {shouldShowThinkingBlock && (
                           <details className="rounded-xl border border-violet-300/40 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-700/40 dark:bg-violet-900/20">
                             <summary className="cursor-pointer select-none font-medium text-violet-700 dark:text-violet-300">
                               Thinking
                             </summary>
                             <div className="mt-2 space-y-2">
                               {thinkingParts.map((part, index) => {
-                                if (part.type === 'text') {
+                                if (part.type === 'text' && part.text?.trim()) {
                                   return (
                                     <p
                                       key={`thinking-text-${part.candidateIndex}-${part.partIndex}-${index}`}
@@ -127,11 +178,33 @@ function AssistantMessage({ message, imageStartIndex = 0, onImageClick }: Messag
                                 }
                                 return null;
                               })}
+                              {shouldFallbackThinkingText && (
+                                <p className="whitespace-pre-wrap break-words text-[var(--text-2)]">
+                                  {msg.thinking}
+                                </p>
+                              )}
+                              {fallbackThinkingImages.length > 0 && (
+                                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(fallbackThinkingImages.length, 2)}, minmax(0, 1fr))` }}>
+                                  {fallbackThinkingImages.map((image, index) => (
+                                    <div
+                                      key={`thinking-fallback-${index}`}
+                                      className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
+                                    >
+                                      <img
+                                        src={`data:${image.mimeType};base64,${image.base64}`}
+                                        alt={`Thinking 图像 ${index + 1}`}
+                                        className="h-auto w-full object-cover"
+                                        loading="lazy"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </details>
                         )}
                         {mainParts.map((part, index) => {
-                          if (part.type === 'text') {
+                          if (part.type === 'text' && part.text?.trim()) {
                             return (
                               <div
                                 key={`part-text-${part.candidateIndex}-${part.partIndex}-${index}`}
@@ -186,6 +259,11 @@ function AssistantMessage({ message, imageStartIndex = 0, onImageClick }: Messag
                             </div>
                           );
                         })}
+                        {shouldFallbackMainText && (
+                          <div className="rounded-xl bg-black/[0.03] px-3 py-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)] dark:bg-white/[0.03]">
+                            {msg.content}
+                          </div>
+                        )}
                         {otherParts.length > 0 && (
                           <details className="rounded-xl border border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs dark:border-amber-700/40 dark:bg-amber-900/20">
                             <summary className="cursor-pointer select-none font-medium text-amber-700 dark:text-amber-300">
@@ -208,7 +286,7 @@ function AssistantMessage({ message, imageStartIndex = 0, onImageClick }: Messag
                   })()
                 ) : (
                   <>
-                    {msg.thinking && (
+                    {settings?.includeThoughts === true && msg.thinking && (
                       <details className="mb-2 rounded-xl border border-violet-300/40 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-700/40 dark:bg-violet-900/20">
                         <summary className="cursor-pointer select-none font-medium text-violet-700 dark:text-violet-300">
                           Thinking
@@ -216,6 +294,23 @@ function AssistantMessage({ message, imageStartIndex = 0, onImageClick }: Messag
                         <p className="mt-2 whitespace-pre-wrap break-words text-[var(--text-2)]">
                           {msg.thinking}
                         </p>
+                        {Array.isArray(msg.thinkingImages) && msg.thinkingImages.length > 0 && (
+                          <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(msg.thinkingImages.length, 2)}, minmax(0, 1fr))` }}>
+                            {msg.thinkingImages.map((image, index) => (
+                              <div
+                                key={`thinking-fallback-${index}`}
+                                className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
+                              >
+                                <img
+                                  src={`data:${image.mimeType};base64,${image.base64}`}
+                                  alt={`Thinking 图像 ${index + 1}`}
+                                  className="h-auto w-full object-cover"
+                                  loading="lazy"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </details>
                     )}
                     {msg.content && (
@@ -296,7 +391,7 @@ function LoadingBubble() {
   );
 }
 
-export function ChatMessageList({ messages, isLoading, onImageSelect }: ChatMessageListProps) {
+export function ChatMessageList({ messages, isLoading, onImageSelect, settings, onRetry, onEdit }: ChatMessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   let assistantImageCount = 0;
 
@@ -328,24 +423,32 @@ export function ChatMessageList({ messages, isLoading, onImageSelect }: ChatMess
 
   return (
     <div className="chat-scroll-area">
-      {messages.map((message, index) =>
-        message.role === 'user' ? (
-          <UserMessage key={index} message={message} />
+      {messages.map((message, index) => {
+        const messageKey = `${message.role}-${message.timestamp}-${index}`;
+        return message.role === 'user' ? (
+          <UserMessage
+            key={messageKey}
+            message={message}
+            messageIndex={index}
+            onRetry={onRetry}
+            onEdit={onEdit}
+          />
         ) : (
           (() => {
             const currentStartIndex = assistantImageCount;
             assistantImageCount += message.images.length;
             return (
               <AssistantMessage
-                key={index}
+                key={messageKey}
                 message={message}
                 imageStartIndex={currentStartIndex}
                 onImageClick={onImageSelect}
+                settings={settings}
               />
             );
           })()
         )
-      )}
+      })}
 
       {isLoading && <LoadingBubble />}
       <div ref={messagesEndRef} />
