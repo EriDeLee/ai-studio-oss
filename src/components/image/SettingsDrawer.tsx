@@ -14,6 +14,7 @@ import {
   normalizeImageSizeForModel,
   normalizeSearchToolsForModel,
   supportsImageSearch,
+  supportsThinkingConfig,
 } from '../../config/imageModelCapabilities';
 
 interface SettingsDrawerProps {
@@ -26,7 +27,7 @@ interface SettingsDrawerProps {
 const COUNT_OPTIONS: readonly NumberOfImages[] = [1, 2, 4];
 
 const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
-  { value: 'minimal', label: 'LOW (默认)' },
+  { value: 'minimal', label: 'MINIMAL (默认)' },
   { value: 'high', label: 'HIGH' },
 ];
 
@@ -78,6 +79,7 @@ function Switch({
 
 export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDrawerProps) {
   const modelSupportsImageSearch = supportsImageSearch(settings.model);
+  const modelSupportsThinkingConfig = supportsThinkingConfig(settings.model);
   const [devLogs, setDevLogs] = useState<DevLogEntry[]>(() => getDevLogs());
 
   useEffect(() => {
@@ -244,6 +246,8 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                   value={settings.seed ?? ''}
                   onChange={(e) => update('seed', e.target.value ? Number(e.target.value) : undefined)}
                   className="input-base"
+                  min={0}
+                  step={1}
                   placeholder="留空随机"
                 />
               </label>
@@ -256,7 +260,7 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                   runtime
                 </span>
               </div>
-              <div className="space-y-3 rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
+              {modelSupportsThinkingConfig && (
                 <label className="space-y-1.5">
                   <span className="text-xs text-[var(--text-3)]">思考级别</span>
                   <select
@@ -266,20 +270,12 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                   >
                     {THINKING_LEVEL_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
+                      {opt.label}
+                    </option>
+                  ))}
                   </select>
                 </label>
-              </div>
-              <div className="space-y-2 rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
-                <p className="text-xs text-[var(--text-3)]">思考输出</p>
-                <Switch
-                  label="显示思考内容"
-                  checked={settings.includeThoughts}
-                  onChange={(value) => update('includeThoughts', value)}
-                />
-              </div>
+              )}
               <label className="space-y-1.5">
                 <span className="text-xs text-[var(--text-3)]">响应模态</span>
                 <select
@@ -332,8 +328,8 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                 }}
               />
               {!modelSupportsImageSearch && (
-                <p className="text-[11px] text-[var(--text-3)]">
-                  {getImageModelLabel(settings.model)} 不支持 Google Image Search。
+                <p className="rounded-lg border border-amber-300/70 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  当前模型 {getImageModelLabel(settings.model)} 不支持 Google Image Search，已禁用该开关。
                 </p>
               )}
             </section>

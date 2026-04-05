@@ -4,7 +4,6 @@ import type {
   ChatMessage,
   ChatUserMessage,
   ChatAssistantMessage,
-  ImageChatSettings,
   GeneratedImage,
   AssistantResponsePart,
 } from '../../types';
@@ -17,7 +16,6 @@ interface ChatMessageListProps {
     image: { base64: string; mimeType: string },
     index: number
   ) => void;
-  settings?: ImageChatSettings;
   onRetry?: (messageIndex: number) => void;
   onEdit?: (messageIndex: number) => void;
 }
@@ -311,12 +309,10 @@ function AssistantMessage({
   message: msg,
   imageStartIndex = 0,
   onImageClick,
-  settings,
 }: {
   message: ChatAssistantMessage;
   imageStartIndex?: number;
   onImageClick?: (image: { base64: string; mimeType: string }, index: number) => void;
-  settings?: ImageChatSettings;
 }) {
   const handleDownload = (image: GeneratedImage) => {
     downloadBase64Image(image.base64, image.mimeType, `ai-image-${Date.now()}.png`);
@@ -334,7 +330,7 @@ function AssistantMessage({
 
   const isError = msg.kind === 'error';
   const hasOrderedParts = Array.isArray(msg.orderedParts) && msg.orderedParts.length > 0;
-  const showThinking = settings?.includeThoughts ?? true;
+  const showThinking = true;
 
   return (
     <div className="flex justify-start">
@@ -429,7 +425,7 @@ function LoadingBubble() {
   );
 }
 
-export function ChatMessageList({ messages, isLoading, onImageSelect, settings, onRetry, onEdit }: ChatMessageListProps) {
+export function ChatMessageList({ messages, isLoading, onImageSelect, onRetry, onEdit }: ChatMessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const renderedMessages = useMemo(() => {
@@ -457,14 +453,13 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, settings, 
           message={message}
           imageStartIndex={assistantImageCount}
           onImageClick={onImageSelect}
-          settings={settings}
         />
       );
       assistantImageCount += message.images.length;
     });
 
     return nodes;
-  }, [messages, onEdit, onImageSelect, onRetry, settings]);
+  }, [messages, onEdit, onImageSelect, onRetry]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

@@ -29,7 +29,6 @@ export interface TextToImageRequest {
   seed?: number;
   imageSize?: string;
   thinkingLevel?: ThinkingLevel;
-  includeThoughts?: boolean;
   responseModality?: ResponseModality;
   enableGoogleSearch?: boolean;
   enableImageSearch?: boolean;
@@ -78,12 +77,39 @@ export interface AssistantResponsePart {
   partIndex: number;
 }
 
+// Gemini 多轮上下文（可持久化）
+export interface ChatContextPart {
+  text?: string;
+  inlineData?: {
+    data: string;
+    mimeType: string;
+  };
+  fileData?: {
+    fileUri: string;
+    mimeType?: string;
+  };
+  thought?: boolean;
+  thoughtSignature?: string;
+  [key: string]: unknown;
+}
+
+export interface ChatContextTurn {
+  role: 'user' | 'model';
+  parts: ChatContextPart[];
+}
+
+export interface ModelContextTurn {
+  role: 'model';
+  parts: ChatContextPart[];
+}
+
 export interface ImageGenerationResponse {
   images: GeneratedImage[];
   text?: string;
   thinking?: string;
   thinkingImages?: GeneratedImage[];
   orderedParts?: AssistantResponsePart[];
+  modelContextTurn?: ModelContextTurn;
   model: ImageModel;
 }
 
@@ -101,6 +127,7 @@ export interface ChatUserMessage {
   role: 'user';
   content: string;
   attachments?: string[];
+  contextTurn?: ChatContextTurn;
   timestamp: number;
 }
 
@@ -112,6 +139,7 @@ export interface ChatAssistantMessage {
   thinking?: string;
   thinkingImages?: GeneratedImage[];
   orderedParts?: AssistantResponsePart[];
+  contextTurn?: ModelContextTurn;
   images: GeneratedImage[];
   timestamp: number;
 }
@@ -142,7 +170,6 @@ export interface ImageChatSettings {
   seed?: number;
   imageSize: string;
   thinkingLevel: ThinkingLevel;
-  includeThoughts: boolean;
   responseModality: ResponseModality;
   enableGoogleSearch: boolean;
   enableImageSearch: boolean;

@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
+  ChatContextPart,
+  ChatContextTurn,
   ChatMessage,
   ChatUserMessage,
   ChatAssistantMessage,
@@ -9,6 +11,7 @@ import type {
   NumberOfImages,
   GeneratedImage,
   AssistantResponsePart,
+  ModelContextTurn,
 } from '../types';
 import { chatImageGeneration } from '../lib/gemini';
 import type { ChatGenerationConfig } from '../lib/gemini';
@@ -21,13 +24,14 @@ import {
   normalizeAspectRatioForModel,
   normalizeImageSizeForModel,
   normalizeSearchToolsForModel,
+  supportsThinkingConfig,
 } from '../config/imageModelCapabilities';
 
 const SETTINGS_STORAGE_KEY = 'ai-studio:image-chat-settings:v3';
 const SETTINGS_EVENT_NAME = 'ai-studio:image-chat-settings-updated';
 // Forward-only policy: chat sessions are persisted in IndexedDB only.
 // We intentionally do not migrate or fallback to legacy localStorage chat session keys.
-const CHAT_IDB_NAME = 'ai-studio:image-chat-db:v3';
+const CHAT_IDB_NAME = 'ai-studio:image-chat-db:v4';
 const CHAT_IDB_STORE = 'chat-kv';
 const CHAT_IDB_SESSIONS_KEY = 'sessions';
 const CHAT_IDB_ACTIVE_SESSION_KEY = 'activeSessionId';
@@ -42,6 +46,11 @@ const isThinkingLevel = (value: unknown): value is NonNullable<ImageChatSettings
 const isResponseModality = (value: unknown): value is NonNullable<ImageChatSettings['responseModality']> => {
   return value === 'text_image' || value === 'image';
 };
+const normalizeSeed = (value: unknown): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (!Number.isInteger(value) || value < 0) return undefined;
+  return value;
+};
 
 type ImageMimeType =
   | 'image/png'
@@ -53,14 +62,9 @@ type ImageMimeType =
   | 'image/bmp'
   | 'image/tiff';
 
-type ContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image'; inlineData: { data: string; mimeType: ImageMimeType } };
-
-type ChatContent = {
-  role: 'user' | 'model';
-  parts: ContentPart[];
-};
+type UserContextPart =
+  | { text: string }
+  | { inlineData: { data: string; mimeType: ImageMimeType } };
 
 let chatDbPromise: Promise<IDBDatabase> | null = null;
 
@@ -90,28 +94,72 @@ const getMimeTypeFromDataUrl = (value: string): ImageMimeType => {
   return 'image/png';
 };
 
-const dataUrlToImagePart = (dataUrl: string): ContentPart => ({
-  type: 'image',
+const dataUrlToImagePart = (dataUrl: string): UserContextPart => ({
   inlineData: {
     data: stripDataUrlPrefix(dataUrl),
     mimeType: getMimeTypeFromDataUrl(dataUrl),
   },
 });
 
-const buildHistoryContents = (messages: ChatMessage[]): ChatContent[] => {
-  const history: ChatContent[] = [];
+const isValidContextPart = (value: unknown): value is ChatContextPart => {
+  return Boolean(value) && typeof value === 'object';
+};
+
+const normalizeContextTurn = (raw: unknown): ChatContextTurn | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as { role?: unknown; parts?: unknown };
+  if (value.role !== 'user' && value.role !== 'model') return null;
+  if (!Array.isArray(value.parts)) return null;
+
+  const parts = value.parts.filter(isValidContextPart).map((part) => {
+    try {
+      return JSON.parse(JSON.stringify(part)) as ChatContextPart;
+    } catch {
+      return null;
+    }
+  }).filter((part): part is ChatContextPart => Boolean(part));
+
+  if (parts.length === 0) return null;
+  return {
+    role: value.role,
+    parts,
+  };
+};
+
+const buildUserContextTurn = (content: string, attachments?: string[]): ChatContextTurn | null => {
+  const parts: UserContextPart[] = [];
+  const trimmedContent = content.trim();
+  if (trimmedContent) {
+    parts.push({ text: trimmedContent });
+  }
+  for (const attachment of attachments ?? []) {
+    parts.push(dataUrlToImagePart(attachment));
+  }
+  if (parts.length === 0) return null;
+  return {
+    role: 'user',
+    parts: parts as ChatContextPart[],
+  };
+};
+
+const buildHistoryContents = (messages: ChatMessage[]): ChatContextTurn[] => {
+  const history: ChatContextTurn[] = [];
 
   for (const message of messages) {
+    const normalizedContextTurn = normalizeContextTurn((message as { contextTurn?: unknown }).contextTurn);
+    if (
+      normalizedContextTurn
+      && ((message.role === 'user' && normalizedContextTurn.role === 'user')
+        || (message.role === 'assistant' && normalizedContextTurn.role === 'model'))
+    ) {
+      history.push(normalizedContextTurn);
+      continue;
+    }
+
     if (message.role === 'user') {
-      const parts: ContentPart[] = [];
-      if (message.content?.trim()) {
-        parts.push({ type: 'text', text: message.content.trim() });
-      }
-      for (const attachment of message.attachments ?? []) {
-        parts.push(dataUrlToImagePart(attachment));
-      }
-      if (parts.length > 0) {
-        history.push({ role: 'user', parts });
+      const fallbackUserTurn = buildUserContextTurn(message.content, message.attachments);
+      if (fallbackUserTurn) {
+        history.push(fallbackUserTurn);
       }
       continue;
     }
@@ -120,13 +168,12 @@ const buildHistoryContents = (messages: ChatMessage[]): ChatContent[] => {
       continue;
     }
 
-    const parts: ContentPart[] = [];
+    const parts: ChatContextPart[] = [];
     if (message.content?.trim()) {
-      parts.push({ type: 'text', text: message.content.trim() });
+      parts.push({ text: message.content.trim() });
     }
     for (const image of message.images ?? []) {
       parts.push({
-        type: 'image',
         inlineData: {
           data: image.base64,
           mimeType: image.mimeType as ImageMimeType,
@@ -253,6 +300,7 @@ const normalizeMessage = (raw: unknown): ChatMessage | null => {
     role?: unknown;
     content?: unknown;
     attachments?: unknown;
+    contextTurn?: unknown;
     timestamp?: unknown;
     kind?: unknown;
     errorMessage?: unknown;
@@ -270,10 +318,12 @@ const normalizeMessage = (raw: unknown): ChatMessage | null => {
     const attachments = Array.isArray(message.attachments)
       ? message.attachments.filter((attachment): attachment is string => typeof attachment === 'string')
       : [];
+    const contextTurn = normalizeContextTurn(message.contextTurn);
     return {
       role: 'user',
       content: message.content,
       attachments: attachments.length > 0 ? attachments : undefined,
+      contextTurn: contextTurn?.role === 'user' ? contextTurn : undefined,
       timestamp,
     };
   }
@@ -319,6 +369,11 @@ const normalizeMessage = (raw: unknown): ChatMessage | null => {
         : orderedText.thinking,
       thinkingImages: thinkingImages.length > 0 ? thinkingImages : undefined,
       orderedParts,
+      contextTurn: (() => {
+        const turn = normalizeContextTurn(message.contextTurn);
+        if (turn && turn.role === 'model') return turn as ModelContextTurn;
+        return undefined;
+      })(),
       images,
       timestamp,
     };
@@ -383,6 +438,7 @@ function toPersistedSessions(sessions: ChatSession[]): ChatSession[] {
         content: message.content,
         thinking: message.thinking,
         thinkingImages: message.thinkingImages,
+        contextTurn: message.contextTurn,
         orderedParts: message.orderedParts?.map((part) => ({
           type: part.type,
           bucket: part.bucket,
@@ -529,8 +585,9 @@ function normalizeSettings(input: unknown): ImageChatSettings {
 
   next.imageSize = normalizeImageSizeForModel(next.model, candidate.imageSize);
 
-  if (typeof candidate.seed === 'number' && Number.isFinite(candidate.seed)) {
-    next.seed = candidate.seed;
+  const normalizedSeed = normalizeSeed(candidate.seed);
+  if (normalizedSeed !== undefined) {
+    next.seed = normalizedSeed;
   }
 
   if (isNumberOfImages(candidate.numberOfImages)) {
@@ -540,8 +597,8 @@ function normalizeSettings(input: unknown): ImageChatSettings {
   if (isThinkingLevel(candidate.thinkingLevel)) {
     next.thinkingLevel = candidate.thinkingLevel;
   }
-  if (typeof candidate.includeThoughts === 'boolean') {
-    next.includeThoughts = candidate.includeThoughts;
+  if (!supportsThinkingConfig(next.model)) {
+    next.thinkingLevel = DEFAULT_IMAGE_CHAT_SETTINGS.thinkingLevel;
   }
 
   if (isResponseModality(candidate.responseModality)) {
@@ -798,10 +855,18 @@ export function useImageChat(): UseImageChatReturn {
       const isCurrentRequest = () =>
         activeRequestIdRef.current === requestId && abortControllerRef.current === controller;
 
+      const userContextTurn = buildUserContextTurn(trimmedContent, normalizedAttachments);
+      if (!userContextTurn) {
+        activeRequestIdRef.current = null;
+        abortControllerRef.current = null;
+        return;
+      }
+
       const userMessage: ChatUserMessage = {
         role: 'user',
         content: trimmedContent,
         attachments: normalizedAttachments,
+        contextTurn: userContextTurn,
         timestamp: Date.now(),
       };
 
@@ -810,28 +875,23 @@ export function useImageChat(): UseImageChatReturn {
       setError(null);
 
       try {
-        const currentParts: ContentPart[] = [];
-        if (trimmedContent) {
-          currentParts.push({ type: 'text', text: trimmedContent });
-        }
-        for (const attachment of normalizedAttachments ?? []) {
-          currentParts.push(dataUrlToImagePart(attachment));
-        }
-
-        const input: string | ChatContent[] =
-          baseMessages.length === 0 && currentParts.length === 1 && currentParts[0].type === 'text'
-            ? currentParts[0].text
-            : [...buildHistoryContents(baseMessages), { role: 'user', parts: currentParts }];
+        const input: string | ChatContextTurn[] =
+          baseMessages.length === 0
+          && userContextTurn.parts.length === 1
+          && typeof userContextTurn.parts[0]?.text === 'string'
+            ? userContextTurn.parts[0].text
+            : [...buildHistoryContents(baseMessages), userContextTurn];
 
         const config: ChatGenerationConfig = {
           aspectRatio: settings.aspectRatio,
           numberOfImages: settings.numberOfImages,
-          thinkingLevel: settings.thinkingLevel,
-          includeThoughts: settings.includeThoughts,
           responseModality: settings.responseModality,
           enableGoogleSearch: settings.enableGoogleSearch,
           enableImageSearch: settings.enableImageSearch,
         };
+        if (supportsThinkingConfig(settings.model)) {
+          config.thinkingLevel = settings.thinkingLevel;
+        }
         if (settings.seed !== undefined) config.seed = settings.seed;
         if (settings.imageSize) config.imageSize = settings.imageSize;
 
@@ -839,7 +899,6 @@ export function useImageChat(): UseImageChatReturn {
           model: settings.model,
           numberOfImages: config.numberOfImages,
           thinkingLevel: config.thinkingLevel,
-          includeThoughts: config.includeThoughts,
           responseModality: config.responseModality,
           historyLength: baseMessages.length,
           hasAttachments: Boolean(normalizedAttachments && normalizedAttachments.length > 0),
@@ -855,6 +914,7 @@ export function useImageChat(): UseImageChatReturn {
           thinking: response.thinking?.trim() ? response.thinking.trim() : undefined,
           thinkingImages: response.thinkingImages,
           orderedParts: response.orderedParts,
+          contextTurn: response.modelContextTurn,
           images: response.images,
           timestamp: Date.now(),
         };

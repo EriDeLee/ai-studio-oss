@@ -27,7 +27,7 @@ const toValidIndex = (index: number | null, length: number): number | null => {
 };
 
 export function ImageChat() {
-  const { messages, isLoading, send, settings, retryFromMessage, getMessageForEdit, activeSessionId } = useOutletContext<LayoutOutletContext>();
+  const { messages, isLoading, send, retryFromMessage, getMessageForEdit, activeSessionId } = useOutletContext<LayoutOutletContext>();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -145,7 +145,6 @@ export function ImageChat() {
           messages={messages}
           isLoading={isLoading}
           onImageSelect={handleImageSelect}
-          settings={settings}
           onRetry={handleRetry}
           onEdit={handleEdit}
         />

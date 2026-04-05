@@ -293,11 +293,8 @@ export function ImagePreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/[0.78] backdrop-blur-[10px]"
       style={{
-        backgroundColor: 'rgba(0, 0, 0, 0.78)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
         paddingTop: 'var(--safe-area-inset-top)',
         paddingBottom: 'var(--safe-area-inset-bottom)',
         paddingLeft: 'var(--safe-area-inset-left)',

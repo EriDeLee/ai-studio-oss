@@ -3,6 +3,7 @@ import type { ImageChatSettings, ImageModel, ImageTaskType, ModelConfig } from '
 type ImageModelCatalogItem = ModelConfig & {
   tag: string;
   supportsImageSearch: boolean;
+  supportsThinkingConfig: boolean;
   allowedImageSizes: readonly string[];
   allowedAspectRatios: readonly string[];
 };
@@ -12,8 +13,8 @@ const FLASH_ASPECT_RATIOS = [
   '1:1',
   '1:4',
   '1:8',
-  '2:3',
   '3:2',
+  '2:3',
   '3:4',
   '4:1',
   '4:3',
@@ -26,8 +27,8 @@ const FLASH_ASPECT_RATIOS = [
 ] as const;
 const PRO_ASPECT_RATIOS = [
   '1:1',
-  '2:3',
   '3:2',
+  '2:3',
   '3:4',
   '4:3',
   '4:5',
@@ -48,6 +49,7 @@ const IMAGE_MODEL_CATALOG: readonly ImageModelCatalogItem[] = [
     supportedTaskTypes: [...IMAGE_TASK_TYPES],
     maxImages: 4,
     supportsImageSearch: true,
+    supportsThinkingConfig: true,
     allowedImageSizes: FLASH_IMAGE_SIZES,
     allowedAspectRatios: FLASH_ASPECT_RATIOS,
   },
@@ -59,6 +61,7 @@ const IMAGE_MODEL_CATALOG: readonly ImageModelCatalogItem[] = [
     supportedTaskTypes: [...IMAGE_TASK_TYPES],
     maxImages: 4,
     supportsImageSearch: false,
+    supportsThinkingConfig: false,
     allowedImageSizes: PRO_IMAGE_SIZES,
     allowedAspectRatios: PRO_ASPECT_RATIOS,
   },
@@ -76,7 +79,6 @@ export const DEFAULT_IMAGE_CHAT_SETTINGS: ImageChatSettings = {
   numberOfImages: 1,
   imageSize: '',
   thinkingLevel: 'minimal',
-  includeThoughts: true,
   responseModality: 'text_image',
   enableGoogleSearch: false,
   enableImageSearch: false,
@@ -111,6 +113,10 @@ export const getImageModelLabel = (model: ImageModel): string => {
 
 export const supportsImageSearch = (model: ImageModel): boolean => {
   return IMAGE_MODEL_CATALOG_MAP[model].supportsImageSearch;
+};
+
+export const supportsThinkingConfig = (model: ImageModel): boolean => {
+  return IMAGE_MODEL_CATALOG_MAP[model].supportsThinkingConfig;
 };
 
 export const getAllowedImageSizes = (model: ImageModel): readonly string[] => {

@@ -24,11 +24,11 @@ export function Button({
     primary:
       'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500',
     secondary:
-      'bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700',
+      'bg-[var(--bg-2)] text-[var(--text-1)] hover:bg-black/5 focus:ring-primary-500 dark:hover:bg-white/10',
     outline:
-      'border-2 border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800',
+      'border-2 border-black/10 text-[var(--text-2)] hover:bg-black/5 focus:ring-primary-500 dark:border-white/10 dark:hover:bg-white/10',
     ghost:
-      'text-gray-700 hover:bg-gray-100 focus:ring-gray-500 dark:text-gray-300 dark:hover:bg-gray-800',
+      'text-[var(--text-2)] hover:bg-black/5 focus:ring-primary-500 dark:hover:bg-white/10',
   };
 
   const sizes = {
