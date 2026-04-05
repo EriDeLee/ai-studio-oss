@@ -12,7 +12,7 @@ interface UseImageGenerationState {
 }
 
 interface UseImageGenerationReturn extends UseImageGenerationState {
-  generate: (request: ImageGenerationRequest, previousInteractionId?: string) => Promise<void>;
+  generate: (request: ImageGenerationRequest) => Promise<void>;
   cancel: () => void;
   reset: () => void;
 }
@@ -33,7 +33,7 @@ export function useImageGeneration(): UseImageGenerationReturn {
     };
   }, []);
 
-  const generate = useCallback(async (request: ImageGenerationRequest, previousInteractionId?: string) => {
+  const generate = useCallback(async (request: ImageGenerationRequest) => {
     // Cancel any in-flight request
     abortControllerRef.current?.abort();
 
@@ -43,7 +43,7 @@ export function useImageGeneration(): UseImageGenerationReturn {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await generateImage(request, controller.signal, previousInteractionId);
+      const response = await generateImage(request, controller.signal);
       setState({ isLoading: false, error: null, response });
     } catch (err) {
       // Ignore abort errors

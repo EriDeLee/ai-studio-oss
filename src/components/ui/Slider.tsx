@@ -1,5 +1,3 @@
-import { cn } from '../../lib/utils';
-
 interface SliderProps {
   label: string;
   value?: number;

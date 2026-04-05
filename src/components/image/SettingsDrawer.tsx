@@ -1,526 +1,404 @@
-import { X, Settings2 } from 'lucide-react';
-import type { ImageChatSettings, ImageModel, SafetyFilterLevel, PersonGeneration, ImagePromptLanguage, ThinkingLevel, ResponseModality } from '../../types';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Settings2, RotateCcw, Bug } from 'lucide-react';
+import type { ImageChatSettings, ImageModel, ThinkingLevel, ResponseModality } from '../../types';
 import { cn } from '../../lib/utils';
-import { Slider } from '../ui/Slider';
+import { DEV_LOG_EVENT_NAME, clearDevLogs, getDevLogs, type DevLogEntry } from '../../lib/devConsole';
 
 interface SettingsDrawerProps {
   settings: ImageChatSettings;
   onChange: (settings: ImageChatSettings) => void;
   open: boolean;
   onClose: () => void;
+  onReset?: () => void;
 }
 
-const MODEL_OPTIONS: { value: ImageModel; label: string; description: string }[] = [
+const DEFAULT_CHAT_SETTINGS: ImageChatSettings = {
+  model: 'gemini-3.1-flash-image-preview',
+  aspectRatio: '1:1',
+  numberOfImages: 1,
+  thinkingLevel: 'minimal',
+  includeThoughts: false,
+  responseModality: 'text_image',
+  enableGoogleSearch: false,
+  enableImageSearch: false,
+};
+
+const MODEL_OPTIONS: { value: ImageModel; label: string; tag: string; description: string }[] = [
   {
     value: 'gemini-3.1-flash-image-preview',
     label: 'Gemini 3.1 Flash Image',
-    description: '快速生成，适合日常使用',
+    tag: '速度优先',
+    description: '更快响应，适合高频迭代。',
   },
   {
     value: 'gemini-3-pro-image-preview',
     label: 'Gemini 3 Pro Image',
-    description: '高质量生成，适合复杂场景',
+    tag: '质量优先',
+    description: '更强细节和构图能力，适合最终稿。',
   },
 ];
 
-const ASPECT_RATIO_OPTIONS = [
-  { value: '1:1', label: '1:1 正方形' },
-  { value: '1:4', label: '1:4 极竖' },
-  { value: '1:8', label: '1:8 超竖' },
-  { value: '2:3', label: '2:3 竖向' },
-  { value: '3:2', label: '3:2 横向' },
-  { value: '3:4', label: '3:4 竖向' },
-  { value: '4:1', label: '4:1 极宽' },
-  { value: '4:3', label: '4:3 标准' },
-  { value: '4:5', label: '4:5 社交' },
-  { value: '5:4', label: '5:4 横社交' },
-  { value: '8:1', label: '8:1 超宽' },
-  { value: '9:16', label: '9:16 竖屏' },
-  { value: '16:9', label: '16:9 宽屏' },
-  { value: '21:9', label: '21:9 超宽屏' },
+const FLASH_ASPECT_RATIO_OPTIONS = [
+  { value: '1:1', label: '1:1' },
+  { value: '1:4', label: '1:4' },
+  { value: '1:8', label: '1:8' },
+  { value: '2:3', label: '2:3' },
+  { value: '3:2', label: '3:2' },
+  { value: '3:4', label: '3:4' },
+  { value: '4:1', label: '4:1' },
+  { value: '4:3', label: '4:3' },
+  { value: '4:5', label: '4:5' },
+  { value: '5:4', label: '5:4' },
+  { value: '8:1', label: '8:1' },
+  { value: '9:16', label: '9:16' },
+  { value: '16:9', label: '16:9' },
+  { value: '21:9', label: '21:9' },
 ];
 
 const PRO_ASPECT_RATIO_OPTIONS = [
-  { value: '1:1', label: '1:1 正方形' },
-  { value: '2:3', label: '2:3 竖向' },
-  { value: '3:2', label: '3:2 横向' },
-  { value: '3:4', label: '3:4 竖向' },
-  { value: '4:3', label: '4:3 标准' },
-  { value: '4:5', label: '4:5 社交' },
-  { value: '5:4', label: '5:4 横社交' },
-  { value: '9:16', label: '9:16 竖屏' },
-  { value: '16:9', label: '16:9 宽屏' },
-  { value: '21:9', label: '21:9 超宽屏' },
+  { value: '1:1', label: '1:1' },
+  { value: '2:3', label: '2:3' },
+  { value: '3:2', label: '3:2' },
+  { value: '3:4', label: '3:4' },
+  { value: '4:3', label: '4:3' },
+  { value: '4:5', label: '4:5' },
+  { value: '5:4', label: '5:4' },
+  { value: '9:16', label: '9:16' },
+  { value: '16:9', label: '16:9' },
+  { value: '21:9', label: '21:9' },
 ];
 
-const COUNT_OPTIONS = [
-  { value: 1, label: '1 张' },
-  { value: 2, label: '2 张' },
-  { value: 4, label: '4 张' },
+const COUNT_OPTIONS = [1, 2, 4];
+
+const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
+  { value: 'minimal', label: 'LOW (默认)' },
+  { value: 'high', label: 'HIGH' },
 ];
 
-const SAFETY_FILTER_OPTIONS: { value: SafetyFilterLevel; label: string }[] = [
-  { value: 'BLOCK_LOW_AND_ABOVE', label: '严格' },
-  { value: 'BLOCK_MEDIUM_AND_ABOVE', label: '中等' },
-  { value: 'BLOCK_ONLY_HIGH', label: '宽松' },
-  { value: 'BLOCK_NONE', label: '关闭' },
+const RESPONSE_MODALITY_OPTIONS: { value: ResponseModality; label: string }[] = [
+  { value: 'text_image', label: 'TEXT + IMAGE' },
+  { value: 'image', label: 'IMAGE ONLY' },
 ];
 
-const PERSON_GENERATION_OPTIONS: { value: PersonGeneration; label: string }[] = [
-  { value: 'DONT_ALLOW', label: '不允许' },
-  { value: 'ALLOW_ADULT', label: '仅成人' },
-  { value: 'ALLOW_ALL', label: '允许所有' },
+const FLASH_IMAGE_SIZE_OPTIONS = [
+  { value: '', label: '默认' },
+  { value: '512', label: '512' },
+  { value: '1K', label: '1K' },
+  { value: '2K', label: '2K' },
+  { value: '4K', label: '4K' },
 ];
 
-const LANGUAGE_OPTIONS: { value: ImagePromptLanguage; label: string }[] = [
-  { value: 'auto', label: '自动' },
-  { value: 'zh', label: '中文' },
-  { value: 'en', label: 'English' },
-  { value: 'ja', label: '日本語' },
-  { value: 'ko', label: '한국어' },
-  { value: 'hi', label: 'हिन्दी' },
-  { value: 'pt', label: 'Português' },
-  { value: 'de', label: 'Deutsch' },
-  { value: 'es', label: 'Español' },
-  { value: 'fr', label: 'Français' },
-  { value: 'id', label: 'Bahasa Indonesia' },
-  { value: 'it', label: 'Italiano' },
-  { value: 'ru', label: 'Русский' },
-  { value: 'uk', label: 'Українська' },
-  { value: 'vi', label: 'Tiếng Việt' },
-  { value: 'ar', label: 'العربية' },
-];
-
-const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string; description: string }[] = [
-  { value: 'minimal', label: '最低', description: '延迟最短，默认选项' },
-  { value: 'high', label: '高', description: '更多推理，适合复杂场景' },
-];
-
-const RESPONSE_MODALITY_OPTIONS: { value: ResponseModality; label: string; description: string }[] = [
-  { value: 'text_image', label: '文本 + 图片', description: '同时返回文字说明和生成的图片' },
-  { value: 'image', label: '仅图片', description: '只返回生成的图片，不返回文字说明' },
-];
-
-const IMAGE_SIZE_OPTIONS = [
+const PRO_IMAGE_SIZE_OPTIONS = [
   { value: '', label: '默认' },
   { value: '1K', label: '1K' },
   { value: '2K', label: '2K' },
   { value: '4K', label: '4K' },
 ];
 
-const FLASH_ONLY_SIZE_OPTIONS = [
-  { value: '512', label: '512' },
-];
-
-const FLASH_ONLY_ASPECT_RATIOS = new Set(['1:4', '4:1', '1:8', '8:1']);
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string | number;
-  onChange: (value: string) => void;
-  options: { value: string | number; label: string }[];
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-        {label}
-      </label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function ToggleField({
+function Switch({
   label,
   checked,
   onChange,
+  disabled,
 }: {
   label: string;
   checked: boolean;
-  onChange: (checked: boolean) => void;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
-      <button
-        type="button"
-        onClick={() => onChange(!checked)}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left',
+        disabled ? 'opacity-50' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.03]'
+      )}
+    >
+      <span className="text-sm text-[var(--text-2)]">{label}</span>
+      <span
         className={cn(
           'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-          checked ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'
+          checked ? 'bg-primary-500' : 'bg-neutral-300 dark:bg-neutral-700'
         )}
       >
         <span
           className={cn(
-            'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+            'inline-block h-4 w-4 rounded-full bg-white transition-transform',
             checked ? 'translate-x-6' : 'translate-x-1'
           )}
         />
-      </button>
-    </div>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  step,
-  placeholder,
-}: {
-  label: string;
-  value?: number;
-  onChange: (value: number | undefined) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  placeholder?: string;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-        {label}
-      </label>
-      <input
-        type="number"
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
-        min={min}
-        max={max}
-        step={step}
-        placeholder={placeholder}
-        className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-      />
-    </div>
+      </span>
+    </button>
   );
 }
 
 export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDrawerProps) {
   const isFlashModel = settings.model === 'gemini-3.1-flash-image-preview';
+  const isProModel = settings.model === 'gemini-3-pro-image-preview';
+  const [devLogs, setDevLogs] = useState<DevLogEntry[]>(() => getDevLogs());
+
+  useEffect(() => {
+    const handler = () => setDevLogs(getDevLogs());
+    window.addEventListener(DEV_LOG_EVENT_NAME, handler as EventListener);
+    return () => window.removeEventListener(DEV_LOG_EVENT_NAME, handler as EventListener);
+  }, []);
+
+  const terminalText = useMemo(
+    () =>
+      devLogs
+        .slice(-120)
+        .map((log) => {
+          const timestamp = new Date(log.ts).toLocaleTimeString('zh-CN', { hour12: false });
+          const payload = log.data === undefined ? '' : ` ${JSON.stringify(log.data)}`;
+          return `[${timestamp}] [${log.level}] [${log.scope}] ${log.message}${payload}`;
+        })
+        .join('\n'),
+    [devLogs]
+  );
 
   const update = <K extends keyof ImageChatSettings>(key: K, value: ImageChatSettings[K]) => {
     onChange({ ...settings, [key]: value });
   };
-
   const updatePartial = (partial: Partial<ImageChatSettings>) => {
     onChange({ ...settings, ...partial });
   };
 
+  const aspectRatioOptions = isFlashModel ? FLASH_ASPECT_RATIO_OPTIONS : PRO_ASPECT_RATIO_OPTIONS;
+  const imageSizeOptions = isFlashModel ? FLASH_IMAGE_SIZE_OPTIONS : PRO_IMAGE_SIZE_OPTIONS;
+
   return (
     <>
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/30 z-40 transition-opacity"
-          onClick={onClose}
-        />
-      )}
+      {open && <div className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm" onClick={onClose} />}
 
-      {/* Drawer */}
-      <div
+      <aside
         className={cn(
-          'fixed top-0 right-0 h-full w-80 bg-white dark:bg-gray-800 shadow-xl z-50',
-          'transform transition-transform duration-300 ease-in-out',
+          'fixed right-0 top-0 z-50 h-full w-[min(100vw,420px)] border-l border-black/10 bg-[var(--panel)] shadow-2xl transition-transform duration-300 dark:border-white/10',
           open ? 'translate-x-0' : 'translate-x-full'
         )}
       >
-        <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex h-full flex-col">
+          <header className="flex items-center justify-between border-b border-black/10 px-5 py-4 dark:border-white/10">
             <div className="flex items-center gap-2">
-              <Settings2 className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">生成设置</h2>
+              <Settings2 className="h-5 w-5 text-primary-500" />
+              <h2 className="text-base font-semibold">生成设置</h2>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="rounded-lg p-2 text-[var(--text-2)] transition-colors hover:bg-black/5 dark:hover:bg-white/10"
               aria-label="关闭设置"
             >
-              <X className="w-5 h-5 text-gray-500" />
+              <X className="h-5 w-5" />
             </button>
-          </div>
+          </header>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Model Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                模型
-              </label>
-              <div className="space-y-2">
-                {MODEL_OPTIONS.map((model) => (
-                  <button
-                    key={model.value}
-                    type="button"
-                    onClick={() => {
-                      const next: Partial<ImageChatSettings> = {
-                        model: model.value,
-                      };
-
-                      if (model.value !== 'gemini-3.1-flash-image-preview') {
-                        next.enableImageSearch = false;
-
-                        if (settings.imageSize === '512') {
-                          next.imageSize = '';
-                        }
-
-                        if (settings.aspectRatio && FLASH_ONLY_ASPECT_RATIOS.has(settings.aspectRatio)) {
-                          next.aspectRatio = '1:1';
-                        }
-                      }
-
-                      updatePartial({
-                        ...next,
-                      });
-                    }}
-                    className={cn(
-                      'w-full text-left p-3 rounded-lg border-2 transition-colors',
-                      settings.model === model.value
-                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                    )}
-                  >
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {model.label}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {model.description}
-                    </div>
-                  </button>
-                ))}
+          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-3)]">模型</p>
+                <button
+                  type="button"
+                  onClick={() => onChange(DEFAULT_CHAT_SETTINGS)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-2 py-1 text-xs text-[var(--text-2)] hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  恢复默认
+                </button>
               </div>
-            </div>
-
-            <div className="border-t border-gray-200 dark:border-gray-700" />
-
-            <div className="space-y-2">
-              <ToggleField
-                label="专业模式（14 张参考图）"
-                checked={settings.professionalMode ?? false}
-                onChange={(v) => update('professionalMode', v)}
-              />
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
-                {settings.professionalMode
-                  ? (isFlashModel
-                    ? 'Flash 配额：最多 10 张对象图 + 4 张角色图（总上限 14）'
-                    : 'Pro 配额：最多 6 张高保真对象图 + 5 张角色图（总上限 14）')
-                  : '默认模式：最多 4 张参考图，速度和稳定性更好'}
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 dark:border-gray-700" />
-
-            {/* Basic Settings */}
-            <SelectField
-              label="宽高比"
-              value={settings.aspectRatio || '1:1'}
-              onChange={(v) => update('aspectRatio', v)}
-              options={isFlashModel ? ASPECT_RATIO_OPTIONS : PRO_ASPECT_RATIO_OPTIONS}
-            />
-
-            <SelectField
-              label="生成数量"
-              value={settings.numberOfImages || 1}
-              onChange={(v) => update('numberOfImages', Number(v))}
-              options={COUNT_OPTIONS}
-            />
-
-            <SelectField
-              label="图像尺寸"
-              value={settings.imageSize || ''}
-              onChange={(v) => update('imageSize', v)}
-              options={
-                isFlashModel
-                  ? [IMAGE_SIZE_OPTIONS[0], ...FLASH_ONLY_SIZE_OPTIONS, ...IMAGE_SIZE_OPTIONS.slice(1)]
-                  : IMAGE_SIZE_OPTIONS
-              }
-            />
-
-            <div className="border-t border-gray-200 dark:border-gray-700" />
-
-            {/* Advanced Settings */}
-            <NumberField
-              label="随机种子"
-              value={settings.seed}
-              onChange={(v) => update('seed', v)}
-              placeholder="留空表示随机"
-            />
-
-            <Slider
-              label="提示词遵循度"
-              value={settings.guidanceScale}
-              onChange={(v) => update('guidanceScale', v)}
-              min={1}
-              max={10}
-              step={0.5}
-            />
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                负面提示词
-              </label>
-              <textarea
-                value={settings.negativePrompt || ''}
-                onChange={(e) => update('negativePrompt', e.target.value)}
-                placeholder="描述你不想看到的内容..."
-                rows={2}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-              />
-            </div>
-
-            <div className="border-t border-gray-200 dark:border-gray-700" />
-
-            <SelectField
-              label="安全过滤"
-              value={settings.safetyFilterLevel || ''}
-              onChange={(v) => update('safetyFilterLevel', v as SafetyFilterLevel)}
-              options={[{ value: '', label: '默认' }, ...SAFETY_FILTER_OPTIONS]}
-            />
-
-            <SelectField
-              label="人物生成"
-              value={settings.personGeneration || ''}
-              onChange={(v) => update('personGeneration', v as PersonGeneration)}
-              options={[{ value: '', label: '默认' }, ...PERSON_GENERATION_OPTIONS]}
-            />
-
-            <SelectField
-              label="提示语言"
-              value={settings.language || 'auto'}
-              onChange={(v) => update('language', v as ImagePromptLanguage)}
-              options={LANGUAGE_OPTIONS}
-            />
-
-            <div className="space-y-3">
-              <ToggleField
-                label="添加水印"
-                checked={settings.addWatermark || false}
-                onChange={(v) => update('addWatermark', v)}
-              />
-              <ToggleField
-                label="提示词增强"
-                checked={settings.enhancePrompt ?? true}
-                onChange={(v) => update('enhancePrompt', v)}
-              />
-            </div>
-
-            <div className="border-t border-gray-200 dark:border-gray-700" />
-
-            {/* Thinking / Reasoning Settings */}
-            {isFlashModel ? (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                    思考级别
-                  </label>
-                  <div className="space-y-2">
-                    {THINKING_LEVEL_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => update('thinkingLevel', option.value)}
-                        className={cn(
-                          'w-full text-left p-3 rounded-lg border-2 transition-colors',
-                          settings.thinkingLevel === option.value
-                            ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                        )}
-                      >
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {option.label}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {option.description}
-                        </div>
-                      </button>
-                    ))}
+              {MODEL_OPTIONS.map((model) => (
+                <button
+                  key={model.value}
+                  type="button"
+                  onClick={() => {
+                    if (model.value === settings.model) return;
+                    const next: Partial<ImageChatSettings> = { model: model.value };
+                    if (model.value === 'gemini-3-pro-image-preview') {
+                      if (settings.imageSize === '512') next.imageSize = '';
+                      next.enableImageSearch = false;
+                    }
+                    updatePartial(next);
+                  }}
+                  className={cn(
+                    'w-full rounded-2xl border p-3 text-left transition-all',
+                    settings.model === model.value
+                      ? 'border-primary-500 bg-primary-50/70 shadow-sm dark:bg-primary-900/20'
+                      : 'border-black/10 bg-black/[0.02] hover:border-black/20 dark:border-white/10 dark:bg-white/[0.03]'
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold">{model.label}</div>
+                    <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-[var(--text-3)] dark:bg-white/10">
+                      {model.tag}
+                    </span>
                   </div>
-                </div>
+                  <div className="mt-1 text-xs text-[var(--text-3)]">{model.description}</div>
+                </button>
+              ))}
+            </section>
 
-                <ToggleField
-                  label="显示思考过程"
-                  checked={settings.includeThoughts || false}
-                  onChange={(v) => update('includeThoughts', v)}
-                />
-              </>
-            ) : (
-              <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
-                Pro 模型内置思考流程，当前版本不提供思考开关。
-              </div>
-            )}
-
-            <div className="border-t border-gray-200 dark:border-gray-700" />
-
-            {/* Response Modality */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                响应类型
+            <section className="grid grid-cols-2 gap-3">
+              <label className="space-y-1.5">
+                <span className="text-xs text-[var(--text-3)]">宽高比</span>
+                <select
+                  value={settings.aspectRatio ?? '1:1'}
+                  onChange={(e) => update('aspectRatio', e.target.value)}
+                  className="input-base"
+                >
+                  {aspectRatioOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <div className="space-y-2">
-                {RESPONSE_MODALITY_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => update('responseModality', option.value)}
-                    className={cn(
-                      'w-full text-left p-3 rounded-lg border-2 transition-colors',
-                      settings.responseModality === option.value
-                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
-                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                    )}
-                  >
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {option.label}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {option.description}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            {/* Google Search & Image Search */}
-            <div className="space-y-3">
-              <ToggleField
-                label="Google 搜索（实时数据）"
+              <label className="space-y-1.5">
+                <span className="text-xs text-[var(--text-3)]">数量</span>
+                <select
+                  value={settings.numberOfImages ?? 1}
+                  onChange={(e) => update('numberOfImages', Number(e.target.value))}
+                  className="input-base"
+                >
+                  {COUNT_OPTIONS.map((count) => (
+                    <option key={count} value={count}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs text-[var(--text-3)]">图片尺寸</span>
+                <select
+                  value={settings.imageSize ?? ''}
+                  onChange={(e) => update('imageSize', e.target.value)}
+                  className="input-base"
+                >
+                  {imageSizeOptions.map((opt) => (
+                    <option key={opt.value || 'default'} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs text-[var(--text-3)]">种子</span>
+                <input
+                  type="number"
+                  value={settings.seed ?? ''}
+                  onChange={(e) => update('seed', e.target.value ? Number(e.target.value) : undefined)}
+                  className="input-base"
+                  placeholder="留空随机"
+                />
+              </label>
+            </section>
+
+            <section className="space-y-4 rounded-2xl border border-primary-300/35 bg-gradient-to-br from-primary-50/70 to-transparent p-3 dark:border-primary-700/40 dark:from-primary-900/20">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-3)]">推理与输出</p>
+                <span className="rounded-full bg-primary-500/12 px-2 py-0.5 text-[10px] text-primary-700 dark:text-primary-300">
+                  runtime
+                </span>
+              </div>
+              <div className="space-y-3 rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
+                <label className="space-y-1.5">
+                  <span className="text-xs text-[var(--text-3)]">思考级别</span>
+                  <select
+                    value={settings.thinkingLevel ?? 'minimal'}
+                    onChange={(e) => update('thinkingLevel', e.target.value as ThinkingLevel)}
+                    className="input-base"
+                  >
+                    {THINKING_LEVEL_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="space-y-2 rounded-xl border border-black/10 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10">
+                <p className="text-xs text-[var(--text-3)]">思考输出</p>
+                <Switch
+                  label="输出思考内容"
+                  checked={settings.includeThoughts ?? false}
+                  onChange={(value) => update('includeThoughts', value)}
+                />
+              </div>
+              <label className="space-y-1.5">
+                <span className="text-xs text-[var(--text-3)]">响应模态</span>
+                <select
+                  value={settings.responseModality ?? 'text_image'}
+                  onChange={(e) => update('responseModality', e.target.value as ResponseModality)}
+                  className="input-base"
+                >
+                  {RESPONSE_MODALITY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-3)]">工具</p>
+                <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-[var(--text-3)] dark:bg-white/10">
+                  tools
+                </span>
+              </div>
+              <Switch
+                label="Google Search"
                 checked={settings.enableGoogleSearch ?? false}
-                onChange={(v) => {
+                onChange={(value) => {
                   updatePartial({
-                    enableGoogleSearch: v,
-                    ...(!v ? { enableImageSearch: false } : {}),
+                    enableGoogleSearch: value,
+                    enableImageSearch: value ? (settings.enableImageSearch ?? false) : false,
                   });
                 }}
               />
-              {settings.enableGoogleSearch && isFlashModel && (
-                <ToggleField
-                  label="Google 图片搜索"
-                  checked={settings.enableImageSearch || false}
-                  onChange={(v) => update('enableImageSearch', v)}
-                />
+              <Switch
+                label="Google Image Search"
+                checked={settings.enableImageSearch ?? false}
+                disabled={!settings.enableGoogleSearch || isProModel}
+                onChange={(value) => update('enableImageSearch', value)}
+              />
+              {isProModel && (
+                <p className="text-[11px] text-[var(--text-3)]">
+                  Gemini 3 Pro Image 不支持 Google Image Search。
+                </p>
               )}
-            </div>
+            </section>
+
+            <section className="space-y-2 rounded-2xl border border-black/10 bg-zinc-950 p-3 text-zinc-100 dark:border-white/20">
+              <div className="flex items-center justify-between">
+                <div className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-zinc-300">
+                  <Bug className="h-3.5 w-3.5" />
+                  开发终端
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearDevLogs();
+                    setDevLogs([]);
+                  }}
+                  className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:bg-zinc-800"
+                >
+                  清空
+                </button>
+              </div>
+              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-[11px] leading-4 text-emerald-300">
+                {terminalText || '等待日志...'}
+              </pre>
+            </section>
           </div>
         </div>
-      </div>
+      </aside>
     </>
   );
 }

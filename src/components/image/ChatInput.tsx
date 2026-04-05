@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Paperclip, X, Sparkles, Image as ImageIcon } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { readFileAsBase64 } from '../../lib/utils';
+import { Send, Paperclip, X, Image as ImageIcon } from 'lucide-react';
+import { cn, readFileAsBase64 } from '../../lib/utils';
 
 interface ChatInputProps {
   onSend: (content: string, attachments?: string[]) => void;
@@ -18,7 +17,7 @@ export function ChatInput({
   onSend,
   isLoading,
   disabled,
-  placeholder = '描述你想要生成的图像，或上传图片作为参考...',
+  placeholder = '输入提示词，按 Enter 发送，Shift+Enter 换行…',
   maxAttachments = DEFAULT_MAX_ATTACHMENTS,
 }: ChatInputProps) {
   const [text, setText] = useState('');
@@ -27,9 +26,7 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setAttachments((prev) => (
-      prev.length > maxAttachments ? prev.slice(0, maxAttachments) : prev
-    ));
+    setAttachments((prev) => (prev.length > maxAttachments ? prev.slice(0, maxAttachments) : prev));
   }, [maxAttachments]);
 
   const handleFiles = useCallback(
@@ -47,7 +44,7 @@ export function ChatInput({
           const base64 = await readFileAsBase64(file);
           setAttachments((prev) => [...prev, base64]);
         } catch {
-          console.error('Failed to read file');
+          // ignore single file failure
         }
       }
     },
@@ -88,19 +85,16 @@ export function ChatInput({
   }, []);
 
   const handleSend = useCallback(() => {
-    if (
-      (!text.trim() && attachments.length === 0) ||
-      isLoading ||
-      disabled
-    )
+    if ((!text.trim() && attachments.length === 0) || isLoading || disabled) {
       return;
+    }
     onSend(text, attachments.length > 0 ? attachments : undefined);
     setText('');
     setAttachments([]);
-  }, [text, attachments, isLoading, disabled, onSend]);
+  }, [attachments, disabled, isLoading, onSend, text]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
@@ -109,112 +103,66 @@ export function ChatInput({
     [handleSend]
   );
 
-  const canSend =
-    (text.trim().length > 0 || attachments.length > 0) &&
-    !isLoading &&
-    !disabled;
+  const canSend = (text.trim().length > 0 || attachments.length > 0) && !isLoading && !disabled;
 
   return (
     <div
       className={cn(
-        'border-t border-gray-100 bg-white/85 px-2 py-3 transition-colors duration-200 sm:p-6',
-        'backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/85',
-        isDragging && 'bg-primary-50/70 dark:bg-primary-950/25'
+        'border-t border-black/10 bg-[var(--panel)] p-2.5 sm:p-4 dark:border-white/10',
+        isDragging && 'bg-primary-500/10'
       )}
-      style={{ paddingBottom: 'calc(1rem + var(--safe-area-inset-bottom))' }}
+      style={{ paddingBottom: 'calc(0.875rem + var(--safe-area-inset-bottom))' }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <div className="w-full max-w-4xl mx-auto">
-        <div
-          className={cn(
-            'relative overflow-hidden rounded-3xl border p-2.5 sm:p-3 transition-all duration-200',
-            'bg-gradient-to-br from-white via-gray-50 to-white',
-            'dark:from-gray-900 dark:via-gray-900 dark:to-gray-800',
-            'border-gray-200/80 dark:border-gray-700/80',
-            'shadow-[0_8px_30px_rgba(0,0,0,0.06)]',
-            'focus-within:border-primary-300 dark:focus-within:border-primary-600',
-            'focus-within:shadow-[0_10px_35px_rgba(168,85,247,0.2)]'
-          )}
-        >
-          <div className="pointer-events-none absolute -top-16 -right-16 h-36 w-36 rounded-full bg-primary-400/15 blur-2xl" />
-          <div className="pointer-events-none absolute -left-20 bottom-0 h-32 w-32 rounded-full bg-blue-400/10 blur-2xl" />
-
-          <div className="mb-3 px-0.5 sm:px-1 flex items-center justify-between">
-            <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 dark:bg-primary-950/50 dark:text-primary-300">
-              <Sparkles className="w-3.5 h-3.5" />
-              AI 图像创作
-            </div>
-            <div className="text-[11px] sm:text-xs text-gray-500 dark:text-gray-400">
-              参考图 {attachments.length}/{maxAttachments}
-            </div>
-          </div>
-
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
           {attachments.length > 0 && (
-            <div className="mb-3 flex gap-2.5 sm:gap-3 px-0.5 sm:px-1 pb-1 overflow-x-auto">
+            <div className="mb-2.5 flex gap-2 overflow-x-auto pb-1">
               {attachments.map((img, index) => (
                 <div
                   key={index}
-                  className="relative flex-shrink-0 w-20 h-20 rounded-2xl overflow-hidden border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 shadow-sm group"
+                  className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-black/10 dark:border-white/10"
                 >
-                  <img
-                    src={img}
-                    alt={`附件 ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={img} alt={`附件 ${index + 1}`} className="h-full w-full object-cover" />
                   <button
                     type="button"
                     onClick={() => removeAttachment(index)}
-                    className="absolute top-1.5 right-1.5 w-6 h-6 flex items-center justify-center bg-black/55 hover:bg-red-500 text-white rounded-full transition-opacity opacity-0 group-hover:opacity-100"
+                    className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
                     aria-label={`删除附件 ${index + 1}`}
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="h-3 w-3" />
                   </button>
                 </div>
               ))}
             </div>
           )}
 
-          <div className="mb-3 rounded-2xl border border-gray-200/80 bg-white/80 px-3.5 sm:px-4 py-3 transition-colors focus-within:border-primary-300 dark:border-gray-700 dark:bg-gray-900/70 dark:focus-within:border-primary-700">
+          <div className="rounded-xl border border-black/10 bg-[var(--panel)] px-3 py-2.5 dark:border-white/10">
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
               rows={2}
-              className={cn(
-                'w-full max-h-40 overflow-y-auto resize-none bg-transparent',
-                'text-gray-900 dark:text-gray-100 text-base leading-relaxed',
-                'placeholder:text-gray-400 dark:placeholder:text-gray-500',
-                'focus:outline-none'
-              )}
-              style={{ minHeight: '48px' }}
+              className="max-h-44 min-h-[3rem] w-full resize-none overflow-y-auto bg-transparent text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] focus:outline-none"
             />
           </div>
 
-          <div className="flex items-center justify-between gap-2.5 sm:gap-3 px-0.5 sm:px-1 pb-0.5 sm:pb-1">
+          <div className="mt-2.5 flex items-center justify-between gap-2">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={attachments.length >= maxAttachments || isLoading}
-              className={cn(
-                'relative inline-flex h-10 w-10 sm:w-auto items-center justify-center sm:justify-start gap-2 rounded-xl border px-0 sm:px-3 text-sm font-medium',
-                'border-gray-200 bg-white text-gray-600 transition-all',
-                'hover:border-primary-300 hover:text-primary-700',
-                'dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300',
-                'dark:hover:border-primary-700 dark:hover:text-primary-300',
-                'disabled:opacity-40 disabled:cursor-not-allowed'
-              )}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-[var(--panel)] px-3 text-sm text-[var(--text-2)] transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:hover:bg-white/10"
               aria-label="上传图片"
             >
-              <Paperclip className="w-4.5 h-4.5" />
+              <Paperclip className="h-4 w-4" />
               <span className="hidden sm:inline">添加图片</span>
-              {attachments.length > 0 && (
-                <span className="absolute -top-1 -right-1 sm:static inline-flex h-5 min-w-5 px-1 items-center justify-center text-[10px] font-semibold bg-primary-500 text-white rounded-full">
-                  {attachments.length}
-                </span>
-              )}
+              <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[11px] dark:bg-white/10">
+                {attachments.length}/{maxAttachments}
+              </span>
             </button>
 
             <input
@@ -227,33 +175,28 @@ export function ChatInput({
               aria-label="上传图片"
             />
 
-            <div className="flex items-center gap-3">
-              <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
-                Enter 发送，Shift+Enter 换行
-              </span>
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={!canSend}
-                className={cn(
-                  'inline-flex h-11 min-w-11 px-3 sm:px-4 items-center justify-center rounded-xl transition-all duration-200',
-                  canSend
-                    ? 'bg-primary-600 hover:bg-primary-700 hover:-translate-y-0.5 text-white shadow-md shadow-primary-500/30'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
-                )}
-                aria-label="发送"
-              >
-                {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <span className="inline-flex items-center gap-1 sm:gap-1.5 text-sm font-semibold">
-                    <ImageIcon className="hidden sm:inline w-4.5 h-4.5" />
-                    <span className="hidden sm:inline">生成</span>
-                    <Send className="w-4.5 h-4.5" />
-                  </span>
-                )}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend}
+              className={cn(
+                'inline-flex h-10 items-center gap-1.5 rounded-xl px-4 text-sm font-medium transition-all',
+                canSend
+                  ? 'bg-primary-600 text-white hover:bg-primary-700'
+                  : 'bg-black/10 text-[var(--text-3)] dark:bg-white/10'
+              )}
+              aria-label="发送"
+            >
+              {isLoading ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : (
+                <>
+                  <ImageIcon className="h-4 w-4" />
+                  生成
+                  <Send className="h-4 w-4" />
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

@@ -1,57 +1,16 @@
-// 模态类型 - 用于扩展其他模态
+// 模态类型
 export type ModalityType = 'image' | 'audio' | 'video' | 'text';
 
-// 图像生成模型
+// 图像生成模型（仅支持两款）
 export type ImageModel =
   | 'gemini-3-pro-image-preview'
   | 'gemini-3.1-flash-image-preview';
 
 // 所有模型联合类型
-export type Model = ImageModel; // 未来可扩展: | AudioModel | VideoModel
+export type Model = ImageModel;
 
 // 图像生成任务类型
 export type ImageTaskType = 'text-to-image' | 'image-to-image' | 'inpainting';
-
-// 宽高比 (kept for backward compat, but SDK uses string)
-export type AspectRatio =
-  | 'square'
-  | 'portrait'
-  | 'landscape'
-  | '16:9'
-  | '9:16'
-  | '4:3'
-  | '3:4'
-  | '1:1';
-
-// Our own string types for UI, cast at API boundary
-export type SafetyFilterLevel =
-  | 'BLOCK_LOW_AND_ABOVE'
-  | 'BLOCK_MEDIUM_AND_ABOVE'
-  | 'BLOCK_ONLY_HIGH'
-  | 'BLOCK_NONE';
-
-export type PersonGeneration =
-  | 'DONT_ALLOW'
-  | 'ALLOW_ADULT'
-  | 'ALLOW_ALL';
-
-export type ImagePromptLanguage =
-  | 'auto'
-  | 'zh'
-  | 'en'
-  | 'ja'
-  | 'ko'
-  | 'hi'
-  | 'pt'
-  | 'de'
-  | 'es'
-  | 'fr'
-  | 'id'
-  | 'it'
-  | 'ru'
-  | 'uk'
-  | 'vi'
-  | 'ar';
 
 // 思考级别
 export type ThinkingLevel = 'minimal' | 'high';
@@ -64,17 +23,10 @@ export interface TextToImageRequest {
   type: 'text-to-image';
   model: ImageModel;
   prompt: string;
-  negativePrompt?: string;
   numberOfImages?: number;
   aspectRatio?: string;
   seed?: number;
-  guidanceScale?: number;
   imageSize?: string;
-  addWatermark?: boolean;
-  safetyFilterLevel?: SafetyFilterLevel;
-  personGeneration?: PersonGeneration;
-  language?: ImagePromptLanguage;
-  enhancePrompt?: boolean;
   thinkingLevel?: ThinkingLevel;
   includeThoughts?: boolean;
   responseModality?: ResponseModality;
@@ -86,7 +38,7 @@ export interface ImageToImageRequest {
   type: 'image-to-image';
   model: ImageModel;
   prompt: string;
-  referenceImages: string[]; // base64 or URL array (multi-image support)
+  referenceImages: string[];
   referenceImageMimeTypes?: string[];
   numberOfImages?: number;
   seed?: number;
@@ -114,11 +66,24 @@ export interface GeneratedImage {
   mimeType: string;
 }
 
+export interface AssistantResponsePart {
+  type: 'text' | 'image' | 'other';
+  bucket: 'thinking' | 'main' | 'other';
+  thought: boolean;
+  text?: string;
+  image?: GeneratedImage;
+  raw: unknown;
+  candidateIndex: number;
+  partIndex: number;
+}
+
 export interface ImageGenerationResponse {
   images: GeneratedImage[];
+  text?: string;
+  thinking?: string;
+  thinkingImages?: GeneratedImage[];
+  orderedParts?: AssistantResponsePart[];
   model: ImageModel;
-  /** Interactions API interaction ID for multi-turn conversation */
-  interactionId?: string;
 }
 
 // 模型配置
@@ -130,19 +95,21 @@ export interface ModelConfig {
   maxImages: number;
 }
 
-// Chat message types for unified conversational UI
+// Chat message
 export interface ChatUserMessage {
   role: 'user';
   content: string;
-  attachments?: string[]; // base64 images
+  attachments?: string[];
   timestamp: number;
 }
 
 export interface ChatAssistantMessage {
   role: 'assistant';
-  content?: string; // text explanation from model
+  content?: string;
+  thinking?: string;
+  thinkingImages?: GeneratedImage[];
+  orderedParts?: AssistantResponsePart[];
   images: GeneratedImage[];
-  interactionId?: string;
   timestamp: number;
 }
 
@@ -151,18 +118,10 @@ export type ChatMessage = ChatUserMessage | ChatAssistantMessage;
 // Unified chat settings
 export interface ImageChatSettings {
   model: ImageModel;
-  professionalMode?: boolean;
   aspectRatio?: string;
   numberOfImages?: number;
   seed?: number;
-  guidanceScale?: number;
   imageSize?: string;
-  addWatermark?: boolean;
-  safetyFilterLevel?: SafetyFilterLevel;
-  personGeneration?: PersonGeneration;
-  language?: ImagePromptLanguage;
-  enhancePrompt?: boolean;
-  negativePrompt?: string;
   thinkingLevel?: ThinkingLevel;
   includeThoughts?: boolean;
   responseModality?: ResponseModality;
