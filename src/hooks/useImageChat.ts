@@ -3,6 +3,8 @@ import type {
   ChatMessage,
   ChatUserMessage,
   ChatAssistantMessage,
+  ChatSession,
+  ChatSessionSummary,
   ImageChatSettings,
 } from '../types';
 import { chatImageGeneration } from '../lib/gemini';
@@ -11,6 +13,8 @@ import { pushDevLog } from '../lib/devConsole';
 
 const SETTINGS_STORAGE_KEY = 'ai-studio:image-chat-settings:v2';
 const SETTINGS_EVENT_NAME = 'ai-studio:image-chat-settings-updated';
+const CHAT_SESSIONS_STORAGE_KEY = 'ai-studio:image-chat-sessions:v1';
+const ACTIVE_SESSION_STORAGE_KEY = 'ai-studio:image-chat-active-session:v1';
 
 const DEFAULT_SETTINGS: ImageChatSettings = {
   model: 'gemini-3.1-flash-image-preview',
@@ -116,6 +120,85 @@ const buildHistoryContents = (messages: ChatMessage[]): ChatContent[] => {
   return history;
 };
 
+function createSession(title = '新对话'): ChatSession {
+  const now = Date.now();
+  return {
+    id: `chat_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    title,
+    createdAt: now,
+    updatedAt: now,
+    messages: [],
+  };
+}
+
+function normalizeSession(raw: Partial<ChatSession>): ChatSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  if (typeof raw.id !== 'string' || !raw.id.trim()) return null;
+  const createdAt = typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt)
+    ? raw.createdAt
+    : Date.now();
+  const updatedAt = typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
+    ? raw.updatedAt
+    : createdAt;
+  const title = typeof raw.title === 'string' && raw.title.trim()
+    ? raw.title.trim().slice(0, 80)
+    : '新对话';
+  const messages = Array.isArray(raw.messages) ? (raw.messages as ChatMessage[]) : [];
+  return {
+    id: raw.id,
+    title,
+    createdAt,
+    updatedAt,
+    messages,
+  };
+}
+
+function readSessionsFromStorage(): ChatSession[] {
+  if (typeof window === 'undefined') return [createSession()];
+  try {
+    const raw = window.localStorage.getItem(CHAT_SESSIONS_STORAGE_KEY);
+    if (!raw) return [createSession()];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [createSession()];
+    const sessions = parsed
+      .map((item) => normalizeSession(item as Partial<ChatSession>))
+      .filter((item): item is ChatSession => Boolean(item))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    return sessions.length > 0 ? sessions : [createSession()];
+  } catch {
+    return [createSession()];
+  }
+}
+
+function readActiveSessionIdFromStorage(sessions: ChatSession[]): string {
+  if (typeof window === 'undefined') return sessions[0].id;
+  try {
+    const id = window.localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+    if (!id) return sessions[0].id;
+    return sessions.some((session) => session.id === id) ? id : sessions[0].id;
+  } catch {
+    return sessions[0].id;
+  }
+}
+
+function persistSessions(sessions: ChatSession[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(CHAT_SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+  } catch {
+    // ignore storage write errors
+  }
+}
+
+function persistActiveSessionId(sessionId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, sessionId);
+  } catch {
+    // ignore storage write errors
+  }
+}
+
 function normalizeSettings(input: Partial<ImageChatSettings>): ImageChatSettings {
   const next: ImageChatSettings = { ...DEFAULT_SETTINGS };
 
@@ -201,18 +284,23 @@ function persistSettings(settings: ImageChatSettings): void {
 }
 
 export interface UseImageChatReturn {
+  sessions: ChatSessionSummary[];
+  activeSessionId: string;
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
   settings: ImageChatSettings;
   setSettings: React.Dispatch<React.SetStateAction<ImageChatSettings>>;
+  switchSession: (sessionId: string) => void;
+  deleteSession: (sessionId: string) => void;
   send: (content: string, attachments?: string[]) => Promise<void>;
   cancel: () => void;
   newChat: () => void;
 }
 
 export function useImageChat(): UseImageChatReturn {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>(() => readSessionsFromStorage());
+  const [activeSessionId, setActiveSessionId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettingsState] = useState<ImageChatSettings>(() => readSettingsFromStorage());
@@ -226,6 +314,22 @@ export function useImageChat(): UseImageChatReturn {
   }, []);
 
   useEffect(() => {
+    persistSessions(sessions);
+  }, [sessions]);
+
+  useEffect(() => {
+    if (!sessions.some((session) => session.id === activeSessionId) && sessions.length > 0) {
+      setActiveSessionId(readActiveSessionIdFromStorage(sessions));
+    }
+  }, [activeSessionId, sessions]);
+
+  useEffect(() => {
+    if (activeSessionId) {
+      persistActiveSessionId(activeSessionId);
+    }
+  }, [activeSessionId]);
+
+  useEffect(() => {
     const handleSettingsEvent = (event: Event) => {
       const customEvent = event as CustomEvent<ImageChatSettings>;
       if (customEvent.detail) {
@@ -236,6 +340,10 @@ export function useImageChat(): UseImageChatReturn {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === SETTINGS_STORAGE_KEY) {
         setSettingsState(readSettingsFromStorage());
+      } else if (event.key === CHAT_SESSIONS_STORAGE_KEY) {
+        setSessions(readSessionsFromStorage());
+      } else if (event.key === ACTIVE_SESSION_STORAGE_KEY) {
+        setActiveSessionId(readActiveSessionIdFromStorage(readSessionsFromStorage()));
       }
     };
 
@@ -262,39 +370,86 @@ export function useImageChat(): UseImageChatReturn {
     });
   }, []);
 
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
+  const messages = activeSession?.messages ?? [];
+
+  const sessionsSummary: ChatSessionSummary[] = sessions
+    .slice()
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map((session) => ({
+      id: session.id,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      messageCount: session.messages.length,
+    }));
+
+  const switchSession = useCallback((sessionId: string) => {
+    if (!sessionId || sessionId === activeSessionId) return;
+    if (!sessions.some((session) => session.id === sessionId)) return;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsLoading(false);
+    setError(null);
+    setActiveSessionId(sessionId);
+  }, [activeSessionId, sessions]);
+
+  const updateSessionMessages = useCallback((sessionId: string, nextMessages: ChatMessage[], titleOverride?: string) => {
+    setSessions((prev) =>
+      prev.map((session) => {
+        if (session.id !== sessionId) return session;
+        const firstUserMessage = nextMessages.find((message) => message.role === 'user') as ChatUserMessage | undefined;
+        const titleFromContent = firstUserMessage?.content?.trim()
+          ? firstUserMessage.content.trim().slice(0, 30)
+          : undefined;
+        return {
+          ...session,
+          title: titleOverride ?? titleFromContent ?? session.title,
+          updatedAt: Date.now(),
+          messages: nextMessages,
+        };
+      })
+    );
+  }, []);
+
   const send = useCallback(
     async (content: string, attachments?: string[]) => {
       if (!content.trim() && (!attachments || attachments.length === 0)) return;
+      if (!activeSession) return;
 
       abortControllerRef.current?.abort();
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      const targetSessionId = activeSession.id;
+      const baseMessages = activeSession.messages;
+      const trimmedContent = content.trim();
+      const normalizedAttachments = attachments?.filter((a) => a.trim());
 
       const userMessage: ChatUserMessage = {
         role: 'user',
-        content: content.trim(),
-        attachments: attachments?.filter((a) => a.trim()),
+        content: trimmedContent,
+        attachments: normalizedAttachments,
         timestamp: Date.now(),
       };
 
-      setMessages((prev) => [...prev, userMessage]);
+      updateSessionMessages(targetSessionId, [...baseMessages, userMessage]);
       setIsLoading(true);
       setError(null);
 
       try {
         const currentParts: ContentPart[] = [];
-        if (content.trim()) {
-          currentParts.push({ type: 'text', text: content.trim() });
+        if (trimmedContent) {
+          currentParts.push({ type: 'text', text: trimmedContent });
         }
-        for (const attachment of attachments ?? []) {
+        for (const attachment of normalizedAttachments ?? []) {
           currentParts.push(dataUrlToImagePart(attachment));
         }
 
         const input: string | ChatContent[] =
-          messages.length === 0 && currentParts.length === 1 && currentParts[0].type === 'text'
+          baseMessages.length === 0 && currentParts.length === 1 && currentParts[0].type === 'text'
             ? currentParts[0].text
-            : [...buildHistoryContents(messages), { role: 'user', parts: currentParts }];
+            : [...buildHistoryContents(baseMessages), { role: 'user', parts: currentParts }];
 
         const config: Record<string, unknown> = {};
         if (settings.aspectRatio) config.aspectRatio = settings.aspectRatio;
@@ -319,8 +474,8 @@ export function useImageChat(): UseImageChatReturn {
           thinkingLevel: config.thinkingLevel,
           includeThoughts: config.includeThoughts,
           responseModality: config.responseModality,
-          historyLength: messages.length,
-          hasAttachments: Boolean(attachments && attachments.length > 0),
+          historyLength: baseMessages.length,
+          hasAttachments: Boolean(normalizedAttachments && normalizedAttachments.length > 0),
         });
 
         const response = await chatImageGeneration(settings.model, input, config, controller.signal);
@@ -335,7 +490,7 @@ export function useImageChat(): UseImageChatReturn {
           timestamp: Date.now(),
         };
 
-        setMessages((prev) => [...prev, assistantMessage]);
+        updateSessionMessages(targetSessionId, [...baseMessages, userMessage, assistantMessage]);
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') {
           return;
@@ -350,8 +505,9 @@ export function useImageChat(): UseImageChatReturn {
           timestamp: Date.now(),
         };
 
-        setMessages((prev) => [
-          ...prev,
+        updateSessionMessages(targetSessionId, [
+          ...baseMessages,
+          userMessage,
           {
             ...errorMessageContent,
             content: `⚠️ ${errorMessage}`,
@@ -362,7 +518,7 @@ export function useImageChat(): UseImageChatReturn {
         abortControllerRef.current = null;
       }
     },
-    [messages, settings]
+    [activeSession, settings, updateSessionMessages]
   );
 
   const cancel = useCallback(() => {
@@ -373,16 +529,45 @@ export function useImageChat(): UseImageChatReturn {
 
   const newChat = useCallback(() => {
     cancel();
-    setMessages([]);
+    const session = createSession();
+    setSessions((prev) => [session, ...prev]);
+    setActiveSessionId(session.id);
     setError(null);
   }, [cancel]);
 
+  const deleteSession = useCallback((sessionId: string) => {
+    if (!sessionId) return;
+    if (activeSessionId === sessionId) {
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
+
+    setSessions((prev) => {
+      const remaining = prev.filter((session) => session.id !== sessionId);
+      if (remaining.length === 0) {
+        const fallback = createSession();
+        setActiveSessionId(fallback.id);
+        return [fallback];
+      }
+      if (activeSessionId === sessionId) {
+        setActiveSessionId(remaining[0].id);
+      }
+      return remaining;
+    });
+    setError(null);
+  }, [activeSessionId]);
+
   return {
+    sessions: sessionsSummary,
+    activeSessionId,
     messages,
     isLoading,
     error,
     settings,
     setSettings,
+    switchSession,
+    deleteSession,
     send,
     cancel,
     newChat,

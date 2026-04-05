@@ -115,6 +115,22 @@ export interface ChatAssistantMessage {
 
 export type ChatMessage = ChatUserMessage | ChatAssistantMessage;
 
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
+}
+
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+}
+
 // Unified chat settings
 export interface ImageChatSettings {
   model: ImageModel;

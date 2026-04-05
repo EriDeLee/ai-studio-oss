@@ -136,11 +136,93 @@ body {
   height: 100%;
 }
 
+.layout-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+@media (min-width: 1024px) {
+  .layout-grid {
+    grid-template-columns: 18rem minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+}
+
 @media (min-width: 1024px) {
   .image-chat-grid {
     grid-template-columns: minmax(0, 1fr) 22rem;
     gap: 0.75rem;
   }
+}
+
+.history-panel {
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid color-mix(in oklab, black 10%, transparent);
+  background: color-mix(in oklab, var(--panel) 88%, transparent);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.dark .history-panel {
+  border-color: color-mix(in oklab, white 12%, transparent);
+}
+
+.history-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.history-item {
+  border: 1px solid color-mix(in oklab, black 8%, transparent);
+  border-radius: 0.8rem;
+  background: color-mix(in oklab, var(--panel) 92%, transparent);
+  padding: 0.55rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "main actions"
+    "meta meta";
+  gap: 0.2rem 0.35rem;
+}
+
+.history-item.is-active {
+  border-color: color-mix(in oklab, var(--color-primary-500) 65%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary-400) 25%, transparent);
+}
+
+.dark .history-item {
+  border-color: color-mix(in oklab, white 10%, transparent);
+}
+
+.history-item-main {
+  grid-area: main;
+  min-width: 0;
+  text-align: left;
+}
+
+.history-item-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: flex-start;
+}
+
+.history-item-meta {
+  grid-area: meta;
+  margin-top: 0.15rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-3);
 }
 
 .chat-main-panel {
