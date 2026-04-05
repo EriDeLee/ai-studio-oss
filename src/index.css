@@ -225,6 +225,65 @@ body {
   color: var(--text-3);
 }
 
+.history-mobile-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+}
+
+.history-mobile-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in oklab, black 36%, transparent);
+}
+
+.history-mobile-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(72dvh, 640px);
+  display: flex;
+  flex-direction: column;
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
+  border: 1px solid color-mix(in oklab, black 10%, transparent);
+  border-bottom: 0;
+  background: color-mix(in oklab, var(--panel) 96%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding-bottom: calc(0.45rem + var(--safe-area-inset-bottom));
+  animation: history-sheet-enter 180ms ease-out;
+}
+
+.dark .history-mobile-panel {
+  border-color: color-mix(in oklab, white 12%, transparent);
+}
+
+.history-mobile-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid color-mix(in oklab, black 10%, transparent);
+  padding: 0.75rem 0.85rem;
+}
+
+.dark .history-mobile-header {
+  border-bottom-color: color-mix(in oklab, white 10%, transparent);
+}
+
+@keyframes history-sheet-enter {
+  from {
+    transform: translateY(18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 .chat-main-panel {
   min-width: 0;
   min-height: 0;
