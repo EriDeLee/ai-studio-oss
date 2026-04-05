@@ -1,6 +1,13 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo, type ReactElement } from 'react';
 import { Download, Copy, Sparkles, User, AlertCircle, Image as ImageIcon, RotateCcw, Pencil } from 'lucide-react';
-import type { ChatMessage, ChatUserMessage, ChatAssistantMessage, ImageChatSettings } from '../../types';
+import type {
+  ChatMessage,
+  ChatUserMessage,
+  ChatAssistantMessage,
+  ImageChatSettings,
+  GeneratedImage,
+  AssistantResponsePart,
+} from '../../types';
 import { downloadBase64Image } from '../../lib/utils';
 
 interface ChatMessageListProps {
@@ -15,29 +22,45 @@ interface ChatMessageListProps {
   onEdit?: (messageIndex: number) => void;
 }
 
-interface MessageBubbleProps {
-  message: ChatMessage;
-  imageStartIndex?: number;
-  onImageClick?: (image: { base64: string; mimeType: string }, index: number) => void;
-  settings?: ImageChatSettings;
-  messageIndex?: number;
+interface UserMessageProps {
+  message: ChatUserMessage;
+  messageIndex: number;
   onRetry?: (messageIndex: number) => void;
   onEdit?: (messageIndex: number) => void;
 }
 
-function UserMessage({ message, messageIndex, onRetry, onEdit }: MessageBubbleProps) {
-  const msg = message as ChatUserMessage;
+interface ImageCardProps {
+  image: GeneratedImage;
+  alt: string;
+  selectableIndex: number;
+  onImageClick?: (image: GeneratedImage, index: number) => void;
+  onDownload: (image: GeneratedImage) => void;
+  onCopy: (image: GeneratedImage) => void;
+}
 
+interface ThinkingDetailsProps {
+  parts: AssistantResponsePart[];
+}
+
+interface OrderedAssistantContentProps {
+  message: ChatAssistantMessage;
+  imageStartIndex: number;
+  showThinking: boolean;
+  onImageClick?: (image: GeneratedImage, index: number) => void;
+  onDownload: (image: GeneratedImage) => void;
+  onCopy: (image: GeneratedImage) => void;
+}
+
+function UserMessage({ message: msg, messageIndex, onRetry, onEdit }: UserMessageProps) {
   return (
     <div className="flex justify-end group">
       <div className="max-w-[92%] space-y-2">
         <div className="flex items-end gap-2 justify-end">
-          {/* Action buttons - left side of user message */}
           <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-200 mr-1">
             <button
               type="button"
-              onClick={() => onRetry?.(messageIndex ?? -1)}
-              disabled={!onRetry || messageIndex === undefined}
+              onClick={() => onRetry?.(messageIndex)}
+              disabled={!onRetry}
               className="p-1.5 rounded-lg text-[var(--text-3)] hover:text-primary-600 hover:bg-primary-100/50 dark:hover:bg-primary-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="重试"
               title="重试"
@@ -46,8 +69,8 @@ function UserMessage({ message, messageIndex, onRetry, onEdit }: MessageBubblePr
             </button>
             <button
               type="button"
-              onClick={() => onEdit?.(messageIndex ?? -1)}
-              disabled={!onEdit || messageIndex === undefined}
+              onClick={() => onEdit?.(messageIndex)}
+              disabled={!onEdit}
               className="p-1.5 rounded-lg text-[var(--text-3)] hover:text-primary-600 hover:bg-primary-100/50 dark:hover:bg-primary-900/30 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               aria-label="编辑"
               title="编辑"
@@ -80,14 +103,226 @@ function UserMessage({ message, messageIndex, onRetry, onEdit }: MessageBubblePr
   );
 }
 
-function AssistantMessage({ message, imageStartIndex = 0, onImageClick, settings }: MessageBubbleProps) {
-  const msg = message as ChatAssistantMessage;
+function ImageCard({ image, alt, selectableIndex, onImageClick, onDownload, onCopy }: ImageCardProps) {
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
+      <img
+        src={`data:${image.mimeType};base64,${image.base64}`}
+        alt={alt}
+        className="h-auto w-full cursor-pointer object-cover transition-transform duration-200 group-hover:scale-105"
+        onClick={() => onImageClick?.(image, selectableIndex)}
+        loading="lazy"
+      />
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:pointer-events-auto group-hover:bg-black/35 group-hover:opacity-100">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDownload(image);
+          }}
+          className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
+          aria-label="下载图片"
+        >
+          <Download className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopy(image);
+          }}
+          className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
+          aria-label="复制图片"
+        >
+          <Copy className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
-  const handleDownload = (image: { base64: string; mimeType: string }) => {
+function ImageGrid({
+  images,
+  imageStartIndex,
+  onImageClick,
+  onDownload,
+  onCopy,
+  altPrefix,
+}: {
+  images: GeneratedImage[];
+  imageStartIndex: number;
+  onImageClick?: (image: GeneratedImage, index: number) => void;
+  onDownload: (image: GeneratedImage) => void;
+  onCopy: (image: GeneratedImage) => void;
+  altPrefix: string;
+}) {
+  if (images.length === 0) return null;
+
+  return (
+    <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(images.length, 2)}, minmax(0, 1fr))` }}>
+      {images.map((image, index) => (
+        <ImageCard
+          key={`${image.base64.slice(0, 16)}-${index}`}
+          image={image}
+          alt={`${altPrefix} ${index + 1}`}
+          selectableIndex={imageStartIndex + index}
+          onImageClick={onImageClick}
+          onDownload={onDownload}
+          onCopy={onCopy}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ThinkingDetails({ parts }: ThinkingDetailsProps) {
+  if (parts.length === 0) return null;
+
+  return (
+    <details className="rounded-xl border border-violet-300/40 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-700/40 dark:bg-violet-900/20">
+      <summary className="cursor-pointer select-none font-medium text-violet-700 dark:text-violet-300">
+        Thinking
+      </summary>
+      <div className="mt-2 space-y-2">
+        {parts.map((part, index) => {
+          if (part.type === 'text' && part.text?.trim()) {
+            return (
+              <p
+                key={`thinking-text-${part.candidateIndex}-${part.partIndex}-${index}`}
+                className="whitespace-pre-wrap break-words text-[var(--text-2)]"
+              >
+                {part.text}
+              </p>
+            );
+          }
+
+          if (part.type === 'image' && part.image) {
+            return (
+              <div
+                key={`thinking-image-${part.candidateIndex}-${part.partIndex}-${index}`}
+                className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
+              >
+                <img
+                  src={`data:${part.image.mimeType};base64,${part.image.base64}`}
+                  alt={`Thinking 图像 ${index + 1}`}
+                  className="h-auto w-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            );
+          }
+
+          return null;
+        })}
+      </div>
+    </details>
+  );
+}
+
+function OrderedAssistantContent({
+  message,
+  imageStartIndex,
+  showThinking,
+  onImageClick,
+  onDownload,
+  onCopy,
+}: OrderedAssistantContentProps) {
+  const orderedParts = message.orderedParts ?? [];
+  const thinkingParts = orderedParts.filter((part) => part.bucket === 'thinking');
+  const mainParts = orderedParts.filter((part) => part.bucket === 'main');
+  const otherParts = orderedParts.filter((part) => part.bucket === 'other');
+
+  const getImageOffsetForPart = (partIndex: number): number => {
+    const imagesBeforeOrAtPart = mainParts
+      .slice(0, partIndex + 1)
+      .filter((part) => part.type === 'image' && Boolean(part.image)).length;
+    return imagesBeforeOrAtPart - 1;
+  };
+
+  const hasRenderableMainPart = mainParts.some((part) => {
+    if (part.type === 'image' && part.image) return true;
+    if (part.type === 'text' && part.text?.trim()) return true;
+    return false;
+  });
+
+  return (
+    <div className="space-y-2">
+      {showThinking && <ThinkingDetails parts={thinkingParts} />}
+
+      {mainParts.map((part, index) => {
+        if (part.type === 'text' && part.text?.trim()) {
+          return (
+            <div
+              key={`part-text-${part.candidateIndex}-${part.partIndex}-${index}`}
+              className="rounded-xl bg-black/[0.03] px-3 py-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)] dark:bg-white/[0.03]"
+            >
+              {part.text}
+            </div>
+          );
+        }
+
+        if (part.type !== 'image' || !part.image) {
+          return null;
+        }
+
+        const selectableIndex = imageStartIndex + getImageOffsetForPart(index);
+
+        return (
+          <ImageCard
+            key={`part-image-${part.candidateIndex}-${part.partIndex}-${index}`}
+            image={part.image}
+            alt={`AI 生成图像 ${index + 1}`}
+            selectableIndex={selectableIndex}
+            onImageClick={onImageClick}
+            onDownload={onDownload}
+            onCopy={onCopy}
+          />
+        );
+      })}
+
+      {!hasRenderableMainPart && message.content?.trim() && (
+        <div className="rounded-xl bg-black/[0.03] px-3 py-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)] dark:bg-white/[0.03]">
+          {message.content}
+        </div>
+      )}
+
+      {otherParts.length > 0 && (
+        <details className="rounded-xl border border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs dark:border-amber-700/40 dark:bg-amber-900/20">
+          <summary className="cursor-pointer select-none font-medium text-amber-700 dark:text-amber-300">
+            其他
+          </summary>
+          <div className="mt-2 space-y-2">
+            {otherParts.map((part, index) => (
+              <pre
+                key={`other-${part.candidateIndex}-${part.partIndex}-${index}`}
+                className="overflow-auto rounded-lg border border-amber-300/40 bg-black/[0.04] p-2 text-[11px] leading-4 text-[var(--text-2)] dark:border-amber-700/40 dark:bg-white/[0.04]"
+              >
+                {JSON.stringify(part.raw, null, 2)}
+              </pre>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function AssistantMessage({
+  message: msg,
+  imageStartIndex = 0,
+  onImageClick,
+  settings,
+}: {
+  message: ChatAssistantMessage;
+  imageStartIndex?: number;
+  onImageClick?: (image: { base64: string; mimeType: string }, index: number) => void;
+  settings?: ImageChatSettings;
+}) {
+  const handleDownload = (image: GeneratedImage) => {
     downloadBase64Image(image.base64, image.mimeType, `ai-image-${Date.now()}.png`);
   };
 
-  const handleCopy = async (image: { base64: string; mimeType: string }) => {
+  const handleCopy = async (image: GeneratedImage) => {
     try {
       const response = await fetch(`data:${image.mimeType};base64,${image.base64}`);
       const blob = await response.blob();
@@ -97,8 +332,9 @@ function AssistantMessage({ message, imageStartIndex = 0, onImageClick, settings
     }
   };
 
-  const isError = msg.content?.startsWith('⚠️');
+  const isError = msg.kind === 'error';
   const hasOrderedParts = Array.isArray(msg.orderedParts) && msg.orderedParts.length > 0;
+  const showThinking = settings?.includeThoughts ?? true;
 
   return (
     <div className="flex justify-start">
@@ -111,255 +347,57 @@ function AssistantMessage({ message, imageStartIndex = 0, onImageClick, settings
             {isError ? (
               <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <p className="text-sm">{msg.content?.slice(4)}</p>
+                <p className="text-sm">{msg.errorMessage ?? '生成失败，请重试'}</p>
               </div>
+            ) : hasOrderedParts ? (
+              <OrderedAssistantContent
+                message={msg}
+                imageStartIndex={imageStartIndex}
+                showThinking={showThinking}
+                onImageClick={onImageClick}
+                onDownload={handleDownload}
+                onCopy={handleCopy}
+              />
             ) : (
               <>
-                {hasOrderedParts ? (
-                  (() => {
-                    const thinkingParts = msg.orderedParts?.filter((part) => part.bucket === 'thinking') ?? [];
-                    const mainParts = msg.orderedParts?.filter((part) => part.bucket === 'main') ?? [];
-                    const otherParts = msg.orderedParts?.filter((part) => part.bucket === 'other') ?? [];
-                    const shouldShowThinking = settings?.includeThoughts === true;
-                    const thinkingTextParts = thinkingParts.filter(
-                      (part) => part.type === 'text' && Boolean(part.text?.trim())
-                    );
-                    const thinkingImageParts = thinkingParts.filter(
-                      (part) => part.type === 'image' && Boolean(part.image)
-                    );
-                    const mainTextParts = mainParts.filter(
-                      (part) => part.type === 'text' && Boolean(part.text?.trim())
-                    );
-                    const shouldShowThinkingBlock = shouldShowThinking && (
-                      thinkingTextParts.length > 0 ||
-                      thinkingImageParts.length > 0 ||
-                      Boolean(msg.thinking?.trim()) ||
-                      Boolean(Array.isArray(msg.thinkingImages) && msg.thinkingImages.length > 0)
-                    );
-                    const shouldFallbackMainText = mainTextParts.length === 0 && Boolean(msg.content?.trim());
-                    const shouldFallbackThinkingText = thinkingTextParts.length === 0 && Boolean(msg.thinking?.trim());
-                    const fallbackThinkingImages = thinkingImageParts.length === 0
-                      ? (Array.isArray(msg.thinkingImages) ? msg.thinkingImages : [])
-                      : [];
-                    let finalImageLocalIndex = 0;
-                    return (
-                      <div className="space-y-2">
-                        {shouldShowThinkingBlock && (
-                          <details className="rounded-xl border border-violet-300/40 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-700/40 dark:bg-violet-900/20">
-                            <summary className="cursor-pointer select-none font-medium text-violet-700 dark:text-violet-300">
-                              Thinking
-                            </summary>
-                            <div className="mt-2 space-y-2">
-                              {thinkingParts.map((part, index) => {
-                                if (part.type === 'text' && part.text?.trim()) {
-                                  return (
-                                    <p
-                                      key={`thinking-text-${part.candidateIndex}-${part.partIndex}-${index}`}
-                                      className="whitespace-pre-wrap break-words text-[var(--text-2)]"
-                                    >
-                                      {part.text ?? ''}
-                                    </p>
-                                  );
-                                }
-                                if (part.type === 'image' && part.image) {
-                                  return (
-                                    <div
-                                      key={`thinking-image-${part.candidateIndex}-${part.partIndex}-${index}`}
-                                      className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
-                                    >
-                                      <img
-                                        src={`data:${part.image.mimeType};base64,${part.image.base64}`}
-                                        alt={`Thinking 图像 ${index + 1}`}
-                                        className="h-auto w-full object-cover"
-                                        loading="lazy"
-                                      />
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })}
-                              {shouldFallbackThinkingText && (
-                                <p className="whitespace-pre-wrap break-words text-[var(--text-2)]">
-                                  {msg.thinking}
-                                </p>
-                              )}
-                              {fallbackThinkingImages.length > 0 && (
-                                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(fallbackThinkingImages.length, 2)}, minmax(0, 1fr))` }}>
-                                  {fallbackThinkingImages.map((image, index) => (
-                                    <div
-                                      key={`thinking-fallback-${index}`}
-                                      className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
-                                    >
-                                      <img
-                                        src={`data:${image.mimeType};base64,${image.base64}`}
-                                        alt={`Thinking 图像 ${index + 1}`}
-                                        className="h-auto w-full object-cover"
-                                        loading="lazy"
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </details>
-                        )}
-                        {mainParts.map((part, index) => {
-                          if (part.type === 'text' && part.text?.trim()) {
-                            return (
-                              <div
-                                key={`part-text-${part.candidateIndex}-${part.partIndex}-${index}`}
-                                className="rounded-xl bg-black/[0.03] px-3 py-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)] dark:bg-white/[0.03]"
-                              >
-                                {part.text ?? ''}
-                              </div>
-                            );
-                          }
-
-                          if (part.type !== 'image' || !part.image) return null;
-
-                          const selectableIndex = imageStartIndex + finalImageLocalIndex;
-                          finalImageLocalIndex += 1;
-
-                          return (
-                            <div
-                              key={`part-image-${part.candidateIndex}-${part.partIndex}-${index}`}
-                              className="group relative overflow-hidden rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5"
-                            >
-                              <img
-                                src={`data:${part.image.mimeType};base64,${part.image.base64}`}
-                                alt={`AI 生成图像 ${index + 1}`}
-                                className="h-auto w-full cursor-pointer object-cover transition-transform duration-200 group-hover:scale-105"
-                                onClick={() => onImageClick?.(part.image!, selectableIndex)}
-                                loading="lazy"
-                              />
-                              <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:pointer-events-auto group-hover:bg-black/35 group-hover:opacity-100">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownload(part.image!);
-                                  }}
-                                  className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
-                                  aria-label="下载图片"
-                                >
-                                  <Download className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleCopy(part.image!);
-                                  }}
-                                  className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
-                                  aria-label="复制图片"
-                                >
-                                  <Copy className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {shouldFallbackMainText && (
-                          <div className="rounded-xl bg-black/[0.03] px-3 py-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)] dark:bg-white/[0.03]">
-                            {msg.content}
-                          </div>
-                        )}
-                        {otherParts.length > 0 && (
-                          <details className="rounded-xl border border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs dark:border-amber-700/40 dark:bg-amber-900/20">
-                            <summary className="cursor-pointer select-none font-medium text-amber-700 dark:text-amber-300">
-                              其他
-                            </summary>
-                            <div className="mt-2 space-y-2">
-                              {otherParts.map((part, index) => (
-                                <pre
-                                  key={`other-${part.candidateIndex}-${part.partIndex}-${index}`}
-                                  className="overflow-auto rounded-lg border border-amber-300/40 bg-black/[0.04] p-2 text-[11px] leading-4 text-[var(--text-2)] dark:border-amber-700/40 dark:bg-white/[0.04]"
-                                >
-                                  {JSON.stringify(part.raw, null, 2)}
-                                </pre>
-                              ))}
-                            </div>
-                          </details>
-                        )}
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <>
-                    {settings?.includeThoughts === true && msg.thinking && (
-                      <details className="mb-2 rounded-xl border border-violet-300/40 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-700/40 dark:bg-violet-900/20">
-                        <summary className="cursor-pointer select-none font-medium text-violet-700 dark:text-violet-300">
-                          Thinking
-                        </summary>
-                        <p className="mt-2 whitespace-pre-wrap break-words text-[var(--text-2)]">
-                          {msg.thinking}
-                        </p>
-                        {Array.isArray(msg.thinkingImages) && msg.thinkingImages.length > 0 && (
-                          <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(msg.thinkingImages.length, 2)}, minmax(0, 1fr))` }}>
-                            {msg.thinkingImages.map((image, index) => (
-                              <div
-                                key={`thinking-fallback-${index}`}
-                                className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
-                              >
-                                <img
-                                  src={`data:${image.mimeType};base64,${image.base64}`}
-                                  alt={`Thinking 图像 ${index + 1}`}
-                                  className="h-auto w-full object-cover"
-                                  loading="lazy"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </details>
-                    )}
-                    {msg.content && (
-                      <p className="mb-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)]">{msg.content}</p>
-                    )}
-                    {msg.images.length > 0 && (
-                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(msg.images.length, 2)}, minmax(0, 1fr))` }}>
-                    {msg.images.map((image, index) => (
-                      <div
-                        key={index}
-                        className="group relative overflow-hidden rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5"
-                      >
-                        <img
-                          src={`data:${image.mimeType};base64,${image.base64}`}
-                          alt={`AI 生成图像 ${index + 1}`}
-                          className="h-auto w-full cursor-pointer object-cover transition-transform duration-200 group-hover:scale-105"
-                          onClick={() => onImageClick?.(image, imageStartIndex + index)}
-                          loading="lazy"
-                        />
-                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:pointer-events-auto group-hover:bg-black/35 group-hover:opacity-100">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownload(image);
-                            }}
-                            className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
-                            aria-label="下载图片"
+                {showThinking && msg.thinking?.trim() && (
+                  <details className="mb-2 rounded-xl border border-violet-300/40 bg-violet-50/60 px-3 py-2 text-xs dark:border-violet-700/40 dark:bg-violet-900/20">
+                    <summary className="cursor-pointer select-none font-medium text-violet-700 dark:text-violet-300">
+                      Thinking
+                    </summary>
+                    <p className="mt-2 whitespace-pre-wrap break-words text-[var(--text-2)]">
+                      {msg.thinking}
+                    </p>
+                    {Array.isArray(msg.thinkingImages) && msg.thinkingImages.length > 0 && (
+                      <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(msg.thinkingImages.length, 2)}, minmax(0, 1fr))` }}>
+                        {msg.thinkingImages.map((image, index) => (
+                          <div
+                            key={`thinking-fallback-${index}`}
+                            className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
                           >
-                            <Download className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopy(image);
-                            }}
-                            className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
-                            aria-label="复制图片"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-                        </div>
+                            <img
+                              src={`data:${image.mimeType};base64,${image.base64}`}
+                              alt={`Thinking 图像 ${index + 1}`}
+                              className="h-auto w-full object-cover"
+                              loading="lazy"
+                            />
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
                     )}
-                  </>
+                  </details>
                 )}
+                {msg.content?.trim() && (
+                  <p className="mb-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)]">{msg.content}</p>
+                )}
+                <ImageGrid
+                  images={msg.images}
+                  imageStartIndex={imageStartIndex}
+                  onImageClick={onImageClick}
+                  onDownload={handleDownload}
+                  onCopy={handleCopy}
+                  altPrefix="AI 生成图像"
+                />
               </>
             )}
           </div>
@@ -393,7 +431,40 @@ function LoadingBubble() {
 
 export function ChatMessageList({ messages, isLoading, onImageSelect, settings, onRetry, onEdit }: ChatMessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  let assistantImageCount = 0;
+
+  const renderedMessages = useMemo(() => {
+    const nodes: ReactElement[] = [];
+    let assistantImageCount = 0;
+
+    messages.forEach((message, index) => {
+      const messageKey = `${message.role}-${message.timestamp}-${index}`;
+      if (message.role === 'user') {
+        nodes.push(
+          <UserMessage
+            key={messageKey}
+            message={message}
+            messageIndex={index}
+            onRetry={onRetry}
+            onEdit={onEdit}
+          />
+        );
+        return;
+      }
+
+      nodes.push(
+        <AssistantMessage
+          key={messageKey}
+          message={message}
+          imageStartIndex={assistantImageCount}
+          onImageClick={onImageSelect}
+          settings={settings}
+        />
+      );
+      assistantImageCount += message.images.length;
+    });
+
+    return nodes;
+  }, [messages, onEdit, onImageSelect, onRetry, settings]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -423,32 +494,7 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, settings, 
 
   return (
     <div className="chat-scroll-area">
-      {messages.map((message, index) => {
-        const messageKey = `${message.role}-${message.timestamp}-${index}`;
-        return message.role === 'user' ? (
-          <UserMessage
-            key={messageKey}
-            message={message}
-            messageIndex={index}
-            onRetry={onRetry}
-            onEdit={onEdit}
-          />
-        ) : (
-          (() => {
-            const currentStartIndex = assistantImageCount;
-            assistantImageCount += message.images.length;
-            return (
-              <AssistantMessage
-                key={messageKey}
-                message={message}
-                imageStartIndex={currentStartIndex}
-                onImageClick={onImageSelect}
-                settings={settings}
-              />
-            );
-          })()
-        )
-      })}
+      {renderedMessages}
 
       {isLoading && <LoadingBubble />}
       <div ref={messagesEndRef} />

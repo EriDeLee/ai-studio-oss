@@ -1,16 +1,23 @@
 import { GoogleGenAI } from '@google/genai';
-import type { Candidate, GenerateContentResponse, Part, Tool } from '@google/genai';
+import type { Candidate, GenerateContentConfig, GenerateContentResponse, Part, Tool } from '@google/genai';
 import type {
   AssistantResponsePart,
   GeneratedImage,
   ImageGenerationRequest,
   ImageGenerationResponse,
   ImageModel,
+  NumberOfImages,
   ResponseModality,
+  ThinkingLevel,
   TextToImageRequest,
 } from '../../types';
 import { pushDevLog } from '../devConsole';
 import { stripDataUrlPrefix } from '../utils';
+import {
+  normalizeAspectRatioForModel,
+  normalizeImageSizeForModel,
+  normalizeSearchToolsForModel,
+} from '../../config/imageModelCapabilities';
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 2000;
@@ -33,6 +40,23 @@ type ChatContent = {
   role: 'user' | 'model';
   parts: ContentPart[];
 };
+
+type GeminiGenerationConfig = Pick<
+  GenerateContentConfig,
+  'candidateCount' | 'seed' | 'imageConfig' | 'thinkingConfig'
+>;
+
+export interface ChatGenerationConfig {
+  numberOfImages?: NumberOfImages;
+  seed?: number;
+  aspectRatio?: string;
+  imageSize?: string;
+  thinkingLevel?: ThinkingLevel;
+  includeThoughts?: boolean;
+  responseModality?: ResponseModality;
+  enableGoogleSearch?: boolean;
+  enableImageSearch?: boolean;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null;
@@ -159,8 +183,12 @@ const summarizeResponseForLog = (response: GenerateContentResponse) => {
   };
 };
 
-const toGeminiThinkingLevel = (thinkingLevel: 'minimal' | 'high'): 'LOW' | 'HIGH' => {
-  return thinkingLevel === 'high' ? 'HIGH' : 'LOW';
+const toGeminiThinkingLevel = (
+  thinkingLevel: 'minimal' | 'high'
+): NonNullable<NonNullable<GenerateContentConfig['thinkingConfig']>['thinkingLevel']> => {
+  return (thinkingLevel === 'high' ? 'HIGH' : 'LOW') as NonNullable<
+    NonNullable<GenerateContentConfig['thinkingConfig']>['thinkingLevel']
+  >;
 };
 
 const createAbortError = (): Error => {
@@ -309,8 +337,8 @@ const buildContents = (request: ImageGenerationRequest): string | ContentPart[] 
   }
 };
 
-const buildGenerationConfig = (request: ImageGenerationRequest) => {
-  const config: Record<string, unknown> = {};
+const buildGenerationConfig = (request: ImageGenerationRequest): GeminiGenerationConfig => {
+  const config: GeminiGenerationConfig = {};
 
   if (typeof request.numberOfImages === 'number' && Number.isFinite(request.numberOfImages)) {
     config.candidateCount = request.numberOfImages;
@@ -320,42 +348,70 @@ const buildGenerationConfig = (request: ImageGenerationRequest) => {
   }
 
   if (request.type === 'text-to-image') {
-    const imageConfig: Record<string, unknown> = {};
-    if (request.aspectRatio) imageConfig.aspectRatio = request.aspectRatio;
-    if (request.imageSize) imageConfig.imageSize = request.imageSize;
-    config.imageConfig = imageConfig;
+    const imageConfig: GeminiGenerationConfig['imageConfig'] = {};
+    if (request.aspectRatio) {
+      const aspectRatio = normalizeAspectRatioForModel(request.model, request.aspectRatio);
+      if (aspectRatio) {
+        imageConfig.aspectRatio = aspectRatio;
+      }
+    }
+    if (request.imageSize) {
+      const imageSize = normalizeImageSizeForModel(request.model, request.imageSize);
+      if (imageSize) {
+        imageConfig.imageSize = imageSize;
+      }
+    }
+    if (Object.keys(imageConfig).length > 0) {
+      config.imageConfig = imageConfig;
+    }
 
     if (request.thinkingLevel || request.includeThoughts !== undefined) {
-      config.thinkingConfig = {
+      const thinkingConfig: NonNullable<GeminiGenerationConfig['thinkingConfig']> = {
         thinkingLevel: toGeminiThinkingLevel(request.thinkingLevel ?? 'minimal'),
-        includeThoughts: Boolean(request.includeThoughts),
       };
+      if (request.includeThoughts !== undefined) {
+        thinkingConfig.includeThoughts = request.includeThoughts;
+      }
+      config.thinkingConfig = thinkingConfig;
     }
   }
 
   return config;
 };
 
-const normalizeChatGenerationConfig = (config: Record<string, unknown>) => {
-  const normalized: Record<string, unknown> = {};
+const normalizeChatGenerationConfig = (model: ImageModel, config: ChatGenerationConfig): GeminiGenerationConfig => {
+  const normalized: GeminiGenerationConfig = {};
 
   if (config.seed !== undefined) normalized.seed = config.seed;
   if (typeof config.numberOfImages === 'number' && Number.isFinite(config.numberOfImages)) {
     normalized.candidateCount = config.numberOfImages;
   }
 
-  const imageConfig: Record<string, unknown> = {};
-  if (config.aspectRatio) imageConfig.aspectRatio = config.aspectRatio;
-  if (config.imageSize) imageConfig.imageSize = config.imageSize;
+  const imageConfig: GeminiGenerationConfig['imageConfig'] = {};
+  if (config.aspectRatio) {
+    const aspectRatio = normalizeAspectRatioForModel(model, config.aspectRatio);
+    if (aspectRatio) {
+      imageConfig.aspectRatio = aspectRatio;
+    }
+  }
+  if (config.imageSize) {
+    const imageSize = normalizeImageSizeForModel(model, config.imageSize);
+    if (imageSize) {
+      imageConfig.imageSize = imageSize;
+    }
+  }
   if (Object.keys(imageConfig).length > 0) normalized.imageConfig = imageConfig;
 
-  const thinkingLevel = config.thinkingLevel as 'minimal' | 'high' | undefined;
-  const includeThoughts = config.includeThoughts as boolean | undefined;
+  const thinkingLevel = config.thinkingLevel;
+  const includeThoughts = config.includeThoughts;
   if (thinkingLevel || includeThoughts !== undefined) {
-    normalized.thinkingConfig = {
+    const thinkingConfig: NonNullable<GeminiGenerationConfig['thinkingConfig']> = {
       thinkingLevel: toGeminiThinkingLevel(thinkingLevel ?? 'minimal'),
-      includeThoughts: Boolean(includeThoughts),
     };
+    if (includeThoughts !== undefined) {
+      thinkingConfig.includeThoughts = includeThoughts;
+    }
+    normalized.thinkingConfig = thinkingConfig;
   }
 
   return normalized;
@@ -366,11 +422,11 @@ const buildTools = (
   enableGoogleSearch?: boolean,
   enableImageSearch?: boolean
 ): Tool[] | undefined => {
-  if (!enableGoogleSearch) return undefined;
+  if (!model) return undefined;
+  const normalizedTools = normalizeSearchToolsForModel(model, enableGoogleSearch, enableImageSearch);
+  if (!normalizedTools.enableGoogleSearch) return undefined;
 
-  const canUseImageSearch = model === 'gemini-3.1-flash-image-preview';
-
-  if (enableImageSearch && canUseImageSearch) {
+  if (normalizedTools.enableImageSearch) {
     return [
       {
         googleSearch: {
@@ -387,18 +443,21 @@ const buildTools = (
 };
 
 const extractImageFromPart = (part: Part): GeneratedImage | null => {
-  if (part.inlineData) {
-    const mimeType = String(part.inlineData.mimeType ?? 'image/png');
+  if (hasOwnProp(part, 'inlineData') && part.inlineData && typeof part.inlineData === 'object') {
+    const inlineData = part.inlineData as { mimeType?: unknown; data?: unknown };
+    const mimeType = String(inlineData.mimeType ?? 'image/png');
     if (!mimeType.startsWith('image/')) return null;
 
-    const base64 = String(part.inlineData.data ?? '');
+    const base64 = String(inlineData.data ?? '');
     if (!base64) return null;
 
     return { base64, mimeType };
   }
 
-  if (part.fileData?.fileUri) {
-    const uri = String(part.fileData.fileUri);
+  if (hasOwnProp(part, 'fileData') && part.fileData && typeof part.fileData === 'object') {
+    const fileData = part.fileData as { fileUri?: unknown };
+    if (!fileData.fileUri) return null;
+    const uri = String(fileData.fileUri);
     const mimeMatch = uri.match(/^data:([^;]+);base64,/i);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
     if (!mimeType.startsWith('image/')) return null;
@@ -506,23 +565,12 @@ const bucketTextFromOrderedParts = (
   };
 };
 
-const CHAT_GENERATION_FIELD_ALLOWLIST = new Set([
-  'numberOfImages',
-  'seed',
-  'aspectRatio',
-  'imageSize',
-  'thinkingLevel',
-  'includeThoughts',
-]);
-
-const stripNonGenerationFields = (config: Record<string, unknown>): Record<string, unknown> => {
-  return Object.fromEntries(
-    Object.entries(config).filter(([key]) => CHAT_GENERATION_FIELD_ALLOWLIST.has(key))
-  );
-};
-
 const isTextToImageRequest = (request: ImageGenerationRequest): request is TextToImageRequest => {
   return request.type === 'text-to-image';
+};
+
+const hasOwnProp = <K extends string>(value: object, key: K): value is Record<K, unknown> => {
+  return Object.prototype.hasOwnProperty.call(value, key);
 };
 
 /**
@@ -593,16 +641,16 @@ export const generateImage = async (
 export const chatImageGeneration = async (
   model: ImageModel,
   input: string | ContentPart[] | ChatContent[],
-  config: Record<string, unknown>,
+  config: ChatGenerationConfig,
   signal?: AbortSignal
 ): Promise<ImageGenerationResponse> => {
   const ai = getClient();
 
-  const enableGoogleSearch = config.enableGoogleSearch as boolean | undefined;
-  const enableImageSearch = config.enableImageSearch as boolean | undefined;
-  const responseModality = config.responseModality as ResponseModality | undefined;
+  const enableGoogleSearch = config.enableGoogleSearch;
+  const enableImageSearch = config.enableImageSearch;
+  const responseModality = config.responseModality;
 
-  const generationConfig = normalizeChatGenerationConfig(stripNonGenerationFields(config));
+  const generationConfig = normalizeChatGenerationConfig(model, config);
   const responseModalities = responseModality === 'image' ? ['IMAGE'] : ['TEXT', 'IMAGE'];
   const tools = buildTools(model, enableGoogleSearch, enableImageSearch);
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X, Images } from 'lucide-react';
 import { ChatMessageList } from '../../../components/image/ChatMessageList';
@@ -32,11 +32,6 @@ export function ImageChat() {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const activeEditState = editState?.sessionId === activeSessionId ? editState : null;
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEditState(null);
-  }, [activeSessionId]);
 
   const conversationImages = useMemo(
     () =>
@@ -91,6 +86,8 @@ export function ImageChat() {
           content: messageData.content,
           attachments: messageData.attachments,
         });
+      } else {
+        setEditState(null);
       }
     },
     [activeSessionId, getMessageForEdit]

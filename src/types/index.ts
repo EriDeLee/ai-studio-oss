@@ -17,13 +17,14 @@ export type ThinkingLevel = 'minimal' | 'high';
 
 // 响应模态
 export type ResponseModality = 'text_image' | 'image';
+export type NumberOfImages = 1 | 2 | 4;
 
 // 图像生成请求
 export interface TextToImageRequest {
   type: 'text-to-image';
   model: ImageModel;
   prompt: string;
-  numberOfImages?: number;
+  numberOfImages?: NumberOfImages;
   aspectRatio?: string;
   seed?: number;
   imageSize?: string;
@@ -40,7 +41,7 @@ export interface ImageToImageRequest {
   prompt: string;
   referenceImages: string[];
   referenceImageMimeTypes?: string[];
-  numberOfImages?: number;
+  numberOfImages?: NumberOfImages;
   seed?: number;
 }
 
@@ -51,7 +52,7 @@ export interface InpaintingRequest {
   referenceImages: string[];
   maskImage?: string;
   referenceImageMimeTypes?: string[];
-  numberOfImages?: number;
+  numberOfImages?: NumberOfImages;
   seed?: number;
 }
 
@@ -105,6 +106,8 @@ export interface ChatUserMessage {
 
 export interface ChatAssistantMessage {
   role: 'assistant';
+  kind: 'normal' | 'error';
+  errorMessage?: string;
   content?: string;
   thinking?: string;
   thinkingImages?: GeneratedImage[];
@@ -134,13 +137,13 @@ export interface ChatSessionSummary {
 // Unified chat settings
 export interface ImageChatSettings {
   model: ImageModel;
-  aspectRatio?: string;
-  numberOfImages?: number;
+  aspectRatio: string;
+  numberOfImages: NumberOfImages;
   seed?: number;
-  imageSize?: string;
-  thinkingLevel?: ThinkingLevel;
-  includeThoughts?: boolean;
-  responseModality?: ResponseModality;
-  enableGoogleSearch?: boolean;
-  enableImageSearch?: boolean;
+  imageSize: string;
+  thinkingLevel: ThinkingLevel;
+  includeThoughts: boolean;
+  responseModality: ResponseModality;
+  enableGoogleSearch: boolean;
+  enableImageSearch: boolean;
 }

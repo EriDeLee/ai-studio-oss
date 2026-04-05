@@ -6,39 +6,42 @@ import type {
   ChatSession,
   ChatSessionSummary,
   ImageChatSettings,
+  NumberOfImages,
   GeneratedImage,
   AssistantResponsePart,
 } from '../types';
 import { chatImageGeneration } from '../lib/gemini';
+import type { ChatGenerationConfig } from '../lib/gemini';
 import { stripDataUrlPrefix } from '../lib/utils';
 import { pushDevLog } from '../lib/devConsole';
+import {
+  DEFAULT_IMAGE_CHAT_SETTINGS,
+  getDefaultAspectRatio,
+  isImageModel,
+  normalizeAspectRatioForModel,
+  normalizeImageSizeForModel,
+  normalizeSearchToolsForModel,
+} from '../config/imageModelCapabilities';
 
-const SETTINGS_STORAGE_KEY = 'ai-studio:image-chat-settings:v2';
+const SETTINGS_STORAGE_KEY = 'ai-studio:image-chat-settings:v3';
 const SETTINGS_EVENT_NAME = 'ai-studio:image-chat-settings-updated';
 // Forward-only policy: chat sessions are persisted in IndexedDB only.
 // We intentionally do not migrate or fallback to legacy localStorage chat session keys.
-const CHAT_IDB_NAME = 'ai-studio:image-chat-db:v1';
+const CHAT_IDB_NAME = 'ai-studio:image-chat-db:v3';
 const CHAT_IDB_STORE = 'chat-kv';
 const CHAT_IDB_SESSIONS_KEY = 'sessions';
 const CHAT_IDB_ACTIVE_SESSION_KEY = 'activeSessionId';
 
-const DEFAULT_SETTINGS: ImageChatSettings = {
-  model: 'gemini-3.1-flash-image-preview',
-  aspectRatio: '1:1',
-  numberOfImages: 1,
-  thinkingLevel: 'minimal',
-  includeThoughts: true,
-  responseModality: 'text_image',
-  enableGoogleSearch: false,
-  enableImageSearch: false,
+const ALLOWED_NUMBER_OF_IMAGES: ReadonlySet<NumberOfImages> = new Set([1, 2, 4]);
+const isNumberOfImages = (value: unknown): value is NumberOfImages => {
+  return typeof value === 'number' && ALLOWED_NUMBER_OF_IMAGES.has(value as NumberOfImages);
 };
-
-const ALLOWED_NUMBER_OF_IMAGES = new Set([1, 2, 4]);
-const ALLOWED_THINKING_LEVELS = new Set(['minimal', 'high']);
-const ALLOWED_RESPONSE_MODALITY = new Set(['text_image', 'image']);
-const ALLOWED_MODELS = new Set(['gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview']);
-const FLASH_IMAGE_SIZES = new Set(['', '512', '1K', '2K', '4K']);
-const PRO_IMAGE_SIZES = new Set(['', '1K', '2K', '4K']);
+const isThinkingLevel = (value: unknown): value is NonNullable<ImageChatSettings['thinkingLevel']> => {
+  return value === 'minimal' || value === 'high';
+};
+const isResponseModality = (value: unknown): value is NonNullable<ImageChatSettings['responseModality']> => {
+  return value === 'text_image' || value === 'image';
+};
 
 type ImageMimeType =
   | 'image/png'
@@ -113,8 +116,12 @@ const buildHistoryContents = (messages: ChatMessage[]): ChatContent[] => {
       continue;
     }
 
+    if (message.kind !== 'normal') {
+      continue;
+    }
+
     const parts: ContentPart[] = [];
-    if (message.content?.trim() && !message.content.startsWith('⚠️')) {
+    if (message.content?.trim()) {
       parts.push({ type: 'text', text: message.content.trim() });
     }
     for (const image of message.images ?? []) {
@@ -147,31 +154,32 @@ function createSession(title = '新对话'): ChatSession {
 
 const normalizeGeneratedImage = (raw: unknown): GeneratedImage | null => {
   if (!raw || typeof raw !== 'object') return null;
-  const image = raw as Partial<GeneratedImage>;
-  if (typeof image.base64 !== 'string' || !image.base64) return null;
-  const mimeType = typeof image.mimeType === 'string' && image.mimeType.startsWith('image/')
-    ? image.mimeType
+  const candidate = raw as { base64?: unknown; mimeType?: unknown };
+  if (typeof candidate.base64 !== 'string' || !candidate.base64) return null;
+  const mimeType = typeof candidate.mimeType === 'string' && candidate.mimeType.startsWith('image/')
+    ? candidate.mimeType
     : 'image/png';
   return {
-    base64: image.base64,
+    base64: candidate.base64,
     mimeType,
   };
 };
 
-const normalizeAssistantOrderedParts = (
-  raw: unknown,
-  images: GeneratedImage[],
-  thinkingImages: GeneratedImage[]
-): AssistantResponsePart[] | undefined => {
+const normalizeAssistantOrderedParts = (raw: unknown): AssistantResponsePart[] | undefined => {
   if (!Array.isArray(raw)) return undefined;
-
-  let mainImageCursor = 0;
-  let thinkingImageCursor = 0;
   const normalized: AssistantResponsePart[] = [];
 
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
-    const part = item as Partial<AssistantResponsePart>;
+    const part = item as {
+      type?: unknown;
+      bucket?: unknown;
+      thought?: unknown;
+      text?: unknown;
+      image?: unknown;
+      candidateIndex?: unknown;
+      partIndex?: unknown;
+    };
 
     const type = part.type === 'text' || part.type === 'image' || part.type === 'other'
       ? part.type
@@ -204,19 +212,10 @@ const normalizeAssistantOrderedParts = (
 
     if (type === 'image') {
       const directImage = normalizeGeneratedImage((part as { image?: unknown }).image);
-      if (directImage) {
-        normalizedPart.image = directImage;
-      } else {
-        const useThinking = thought || bucket === 'thinking';
-        const image = useThinking ? thinkingImages[thinkingImageCursor] : images[mainImageCursor];
-        if (useThinking) {
-          thinkingImageCursor += 1;
-        } else {
-          mainImageCursor += 1;
-        }
-        if (!image) continue;
-        normalizedPart.image = image;
+      if (!directImage) {
+        continue;
       }
+      normalizedPart.image = directImage;
     }
 
     normalized.push(normalizedPart);
@@ -250,7 +249,18 @@ const getTextFromOrderedParts = (
 
 const normalizeMessage = (raw: unknown): ChatMessage | null => {
   if (!raw || typeof raw !== 'object') return null;
-  const message = raw as Partial<ChatMessage> & { orderedParts?: unknown; thinkingImages?: unknown; images?: unknown };
+  const message = raw as {
+    role?: unknown;
+    content?: unknown;
+    attachments?: unknown;
+    timestamp?: unknown;
+    kind?: unknown;
+    errorMessage?: unknown;
+    orderedParts?: unknown;
+    thinking?: unknown;
+    thinkingImages?: unknown;
+    images?: unknown;
+  };
   const timestamp = typeof message.timestamp === 'number' && Number.isFinite(message.timestamp)
     ? message.timestamp
     : Date.now();
@@ -269,6 +279,22 @@ const normalizeMessage = (raw: unknown): ChatMessage | null => {
   }
 
   if (message.role === 'assistant') {
+    if (message.kind !== 'normal' && message.kind !== 'error') {
+      return null;
+    }
+    if (message.kind === 'error') {
+      if (typeof message.errorMessage !== 'string' || !message.errorMessage.trim()) {
+        return null;
+      }
+      return {
+        role: 'assistant',
+        kind: 'error',
+        errorMessage: message.errorMessage.trim(),
+        images: [],
+        timestamp,
+      };
+    }
+
     const images = Array.isArray(message.images)
       ? message.images
         .map((image) => normalizeGeneratedImage(image))
@@ -279,11 +305,12 @@ const normalizeMessage = (raw: unknown): ChatMessage | null => {
         .map((image) => normalizeGeneratedImage(image))
         .filter((image): image is GeneratedImage => Boolean(image))
       : [];
-    const orderedParts = normalizeAssistantOrderedParts(message.orderedParts, images, thinkingImages);
+    const orderedParts = normalizeAssistantOrderedParts(message.orderedParts);
     const orderedText = getTextFromOrderedParts(orderedParts);
 
     const normalizedAssistant: ChatAssistantMessage = {
       role: 'assistant',
+      kind: 'normal',
       content: typeof message.content === 'string' && message.content.trim()
         ? message.content
         : orderedText.content,
@@ -301,25 +328,32 @@ const normalizeMessage = (raw: unknown): ChatMessage | null => {
   return null;
 };
 
-function normalizeSession(raw: Partial<ChatSession>): ChatSession | null {
+function normalizeSession(raw: unknown): ChatSession | null {
   if (!raw || typeof raw !== 'object') return null;
-  if (typeof raw.id !== 'string' || !raw.id.trim()) return null;
-  const createdAt = typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt)
-    ? raw.createdAt
+  const session = raw as {
+    id?: unknown;
+    title?: unknown;
+    createdAt?: unknown;
+    updatedAt?: unknown;
+    messages?: unknown;
+  };
+  if (typeof session.id !== 'string' || !session.id.trim()) return null;
+  const createdAt = typeof session.createdAt === 'number' && Number.isFinite(session.createdAt)
+    ? session.createdAt
     : Date.now();
-  const updatedAt = typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
-    ? raw.updatedAt
+  const updatedAt = typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt)
+    ? session.updatedAt
     : createdAt;
-  const title = typeof raw.title === 'string' && raw.title.trim()
-    ? raw.title.trim().slice(0, 80)
+  const title = typeof session.title === 'string' && session.title.trim()
+    ? session.title.trim().slice(0, 80)
     : '新对话';
-  const messages = Array.isArray(raw.messages)
-    ? raw.messages
+  const messages = Array.isArray(session.messages)
+    ? session.messages
       .map((message) => normalizeMessage(message))
       .filter((message): message is ChatMessage => Boolean(message))
     : [];
   return {
-    id: raw.id,
+    id: session.id,
     title,
     createdAt,
     updatedAt,
@@ -332,15 +366,24 @@ function toPersistedSessions(sessions: ChatSession[]): ChatSession[] {
     ...session,
     messages: session.messages.map((message) => {
       if (message.role !== 'assistant') return message;
+      if (message.kind === 'error') {
+        return {
+          role: 'assistant',
+          kind: 'error',
+          errorMessage: message.errorMessage ?? '生成失败，请重试',
+          images: [],
+          timestamp: message.timestamp,
+        };
+      }
 
-      const assistant = message as ChatAssistantMessage;
       // Do not persist heavy/unstable debug fields to reduce IndexedDB payload churn.
       return {
         role: 'assistant',
-        content: assistant.content,
-        thinking: assistant.thinking,
-        thinkingImages: assistant.thinkingImages,
-        orderedParts: assistant.orderedParts?.map((part) => ({
+        kind: 'normal',
+        content: message.content,
+        thinking: message.thinking,
+        thinkingImages: message.thinkingImages,
+        orderedParts: message.orderedParts?.map((part) => ({
           type: part.type,
           bucket: part.bucket,
           thought: part.thought,
@@ -350,8 +393,8 @@ function toPersistedSessions(sessions: ChatSession[]): ChatSession[] {
           partIndex: part.partIndex,
           raw: null,
         })),
-        images: assistant.images,
-        timestamp: assistant.timestamp,
+        images: message.images,
+        timestamp: message.timestamp,
       };
     }),
   }));
@@ -442,7 +485,7 @@ const readSessionsFromIndexedDb = async (): Promise<ChatSession[] | null> => {
     const raw = await idbGet<unknown>(CHAT_IDB_SESSIONS_KEY);
     if (!Array.isArray(raw)) return null;
     const sessions = raw
-      .map((item) => normalizeSession(item as Partial<ChatSession>))
+      .map((item) => normalizeSession(item))
       .filter((item): item is ChatSession => Boolean(item))
       .sort((a, b) => b.updatedAt - a.updatedAt);
     return sessions.length > 0 ? sessions : null;
@@ -472,77 +515,60 @@ const readActiveSessionIdFromIndexedDb = async (): Promise<string | null> => {
   }
 };
 
-function normalizeSettings(input: Partial<ImageChatSettings>): ImageChatSettings {
-  const next: ImageChatSettings = { ...DEFAULT_SETTINGS };
+function normalizeSettings(input: unknown): ImageChatSettings {
+  if (!input || typeof input !== 'object') return { ...DEFAULT_IMAGE_CHAT_SETTINGS };
+  const candidate = input as Record<string, unknown>;
+  const next: ImageChatSettings = { ...DEFAULT_IMAGE_CHAT_SETTINGS };
 
-  if (typeof input.model === 'string' && ALLOWED_MODELS.has(input.model)) {
-    next.model = input.model as ImageChatSettings['model'];
-  }
-
-  if (typeof input.aspectRatio === 'string' && input.aspectRatio.trim()) {
-    next.aspectRatio = input.aspectRatio;
+  if (isImageModel(candidate.model)) {
+    next.model = candidate.model;
   }
 
-  if (typeof input.imageSize === 'string') {
-    next.imageSize = input.imageSize;
+  next.aspectRatio = normalizeAspectRatioForModel(next.model, candidate.aspectRatio)
+    || getDefaultAspectRatio(next.model);
+
+  next.imageSize = normalizeImageSizeForModel(next.model, candidate.imageSize);
+
+  if (typeof candidate.seed === 'number' && Number.isFinite(candidate.seed)) {
+    next.seed = candidate.seed;
   }
 
-  if (typeof input.seed === 'number' && Number.isFinite(input.seed)) {
-    next.seed = input.seed;
+  if (isNumberOfImages(candidate.numberOfImages)) {
+    next.numberOfImages = candidate.numberOfImages;
   }
 
-  if (typeof input.numberOfImages === 'number' && ALLOWED_NUMBER_OF_IMAGES.has(input.numberOfImages)) {
-    next.numberOfImages = input.numberOfImages;
+  if (isThinkingLevel(candidate.thinkingLevel)) {
+    next.thinkingLevel = candidate.thinkingLevel;
+  }
+  if (typeof candidate.includeThoughts === 'boolean') {
+    next.includeThoughts = candidate.includeThoughts;
   }
 
-  if (typeof input.thinkingLevel === 'string' && ALLOWED_THINKING_LEVELS.has(input.thinkingLevel)) {
-    next.thinkingLevel = input.thinkingLevel as ImageChatSettings['thinkingLevel'];
-  }
-  if (typeof input.includeThoughts === 'boolean') {
-    next.includeThoughts = input.includeThoughts;
+  if (isResponseModality(candidate.responseModality)) {
+    next.responseModality = candidate.responseModality;
   }
 
-  if (
-    typeof input.responseModality === 'string' &&
-    ALLOWED_RESPONSE_MODALITY.has(input.responseModality)
-  ) {
-    next.responseModality = input.responseModality as ImageChatSettings['responseModality'];
-  }
-
-  if (typeof input.enableGoogleSearch === 'boolean') {
-    next.enableGoogleSearch = input.enableGoogleSearch;
-  }
-
-  if (typeof input.enableImageSearch === 'boolean') {
-    next.enableImageSearch = input.enableImageSearch;
-  }
-
-  if (!next.enableGoogleSearch) {
-    next.enableImageSearch = false;
-  }
-
-  // Model capability constraints.
-  const allowedImageSizes = next.model === 'gemini-3-pro-image-preview' ? PRO_IMAGE_SIZES : FLASH_IMAGE_SIZES;
-  if (!allowedImageSizes.has(next.imageSize ?? '')) {
-    next.imageSize = '';
-  }
-  if (next.model === 'gemini-3-pro-image-preview') {
-    next.enableImageSearch = false;
-  }
+  const normalizedTools = normalizeSearchToolsForModel(
+    next.model,
+    candidate.enableGoogleSearch,
+    candidate.enableImageSearch
+  );
+  next.enableGoogleSearch = normalizedTools.enableGoogleSearch;
+  next.enableImageSearch = normalizedTools.enableImageSearch;
 
   return next;
 }
 
 function readSettingsFromStorage(): ImageChatSettings {
-  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+  if (typeof window === 'undefined') return { ...DEFAULT_IMAGE_CHAT_SETTINGS };
 
   try {
     const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<ImageChatSettings>;
+    if (!raw) return { ...DEFAULT_IMAGE_CHAT_SETTINGS };
+    const parsed = JSON.parse(raw);
     return normalizeSettings(parsed);
   } catch {
-    return DEFAULT_SETTINGS;
+    return { ...DEFAULT_IMAGE_CHAT_SETTINGS };
   }
 }
 
@@ -699,7 +725,7 @@ export function useImageChat(): UseImageChatReturn {
   }, []);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
-  const messages = activeSession?.messages ?? [];
+  const messages = activeSession ? activeSession.messages : [];
 
   const sessionsSummary: ChatSessionSummary[] = sessions
     .slice()
@@ -728,7 +754,9 @@ export function useImageChat(): UseImageChatReturn {
     setSessions((prev) => {
       return prev.map((session) => {
         if (session.id !== sessionId) return session;
-        const firstUserMessage = nextMessages.find((message) => message.role === 'user') as ChatUserMessage | undefined;
+        const firstUserMessage = nextMessages.find(
+          (message): message is ChatUserMessage => message.role === 'user'
+        );
         const titleFromContent = firstUserMessage?.content?.trim()
           ? firstUserMessage.content.trim().slice(0, 30)
           : undefined;
@@ -795,22 +823,17 @@ export function useImageChat(): UseImageChatReturn {
             ? currentParts[0].text
             : [...buildHistoryContents(baseMessages), { role: 'user', parts: currentParts }];
 
-        const config: Record<string, unknown> = {};
-        if (settings.aspectRatio) config.aspectRatio = settings.aspectRatio;
-        if (typeof settings.numberOfImages === 'number' && Number.isFinite(settings.numberOfImages)) {
-          config.numberOfImages = settings.numberOfImages;
-        }
+        const config: ChatGenerationConfig = {
+          aspectRatio: settings.aspectRatio,
+          numberOfImages: settings.numberOfImages,
+          thinkingLevel: settings.thinkingLevel,
+          includeThoughts: settings.includeThoughts,
+          responseModality: settings.responseModality,
+          enableGoogleSearch: settings.enableGoogleSearch,
+          enableImageSearch: settings.enableImageSearch,
+        };
         if (settings.seed !== undefined) config.seed = settings.seed;
         if (settings.imageSize) config.imageSize = settings.imageSize;
-        if (settings.thinkingLevel) config.thinkingLevel = settings.thinkingLevel;
-        if (typeof settings.includeThoughts === 'boolean') config.includeThoughts = settings.includeThoughts;
-        if (settings.responseModality) config.responseModality = settings.responseModality;
-        if (settings.enableGoogleSearch !== undefined) config.enableGoogleSearch = settings.enableGoogleSearch;
-        if (settings.enableImageSearch !== undefined) {
-          config.enableImageSearch = settings.model === 'gemini-3-pro-image-preview'
-            ? false
-            : settings.enableImageSearch;
-        }
 
         pushDevLog('chat.send', 'request-config', 'info', {
           model: settings.model,
@@ -827,6 +850,7 @@ export function useImageChat(): UseImageChatReturn {
 
         const assistantMessage: ChatAssistantMessage = {
           role: 'assistant',
+          kind: 'normal',
           content: response.text?.trim() ? response.text.trim() : undefined,
           thinking: response.thinking?.trim() ? response.thinking.trim() : undefined,
           thinkingImages: response.thinkingImages,
@@ -847,6 +871,8 @@ export function useImageChat(): UseImageChatReturn {
 
         const errorMessageContent: ChatAssistantMessage = {
           role: 'assistant',
+          kind: 'error',
+          errorMessage,
           images: [],
           timestamp: Date.now(),
         };
@@ -854,10 +880,7 @@ export function useImageChat(): UseImageChatReturn {
         updateSessionMessages(targetSessionId, [
           ...baseMessages,
           userMessage,
-          {
-            ...errorMessageContent,
-            content: `⚠️ ${errorMessage}`,
-          },
+          errorMessageContent,
         ]);
       } finally {
         if (isCurrentRequest()) {
@@ -939,8 +962,7 @@ export function useImageChat(): UseImageChatReturn {
     updateSessionMessages(currentSession.id, newMessages);
 
     // Re-send using the target message content (will create a new message)
-    const userMsg = targetMessage as ChatUserMessage;
-    await sendToSession(currentSession.id, userMsg.content, userMsg.attachments, newMessages);
+    await sendToSession(currentSession.id, targetMessage.content, targetMessage.attachments, newMessages);
   }, [getCurrentSession, sendToSession, storageHydrated, updateSessionMessages]);
 
   const getMessageForEdit = useCallback((messageIndex: number): { content: string; attachments: string[] } | null => {
@@ -951,10 +973,9 @@ export function useImageChat(): UseImageChatReturn {
     const message = currentSession.messages[messageIndex];
     if (message.role !== 'user') return null;
 
-    const userMsg = message as ChatUserMessage;
     return {
-      content: userMsg.content,
-      attachments: userMsg.attachments ?? [],
+      content: message.content,
+      attachments: message.attachments ?? [],
     };
   }, [getCurrentSession]);
 

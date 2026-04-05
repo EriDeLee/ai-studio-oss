@@ -1,74 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Settings2, RotateCcw, Bug } from 'lucide-react';
-import type { ImageChatSettings, ImageModel, ThinkingLevel, ResponseModality } from '../../types';
+import type { ImageChatSettings, ThinkingLevel, ResponseModality, NumberOfImages } from '../../types';
 import { cn } from '../../lib/utils';
 import { DEV_LOG_EVENT_NAME, clearDevLogs, getDevLogs, type DevLogEntry } from '../../lib/devConsole';
+import {
+  DEFAULT_IMAGE_CHAT_SETTINGS,
+  IMAGE_MODEL_OPTIONS,
+  getAllowedAspectRatios,
+  getAllowedImageSizes,
+  getDefaultAspectRatio,
+  getImageModelLabel,
+  normalizeAspectRatioForModel,
+  normalizeImageSizeForModel,
+  normalizeSearchToolsForModel,
+  supportsImageSearch,
+} from '../../config/imageModelCapabilities';
 
 interface SettingsDrawerProps {
   settings: ImageChatSettings;
   onChange: (settings: ImageChatSettings) => void;
   open: boolean;
   onClose: () => void;
-  onReset?: () => void;
 }
 
-const DEFAULT_CHAT_SETTINGS: ImageChatSettings = {
-  model: 'gemini-3.1-flash-image-preview',
-  aspectRatio: '1:1',
-  numberOfImages: 1,
-  thinkingLevel: 'minimal',
-  includeThoughts: true,
-  responseModality: 'text_image',
-  enableGoogleSearch: false,
-  enableImageSearch: false,
-};
-
-const MODEL_OPTIONS: { value: ImageModel; label: string; tag: string; description: string }[] = [
-  {
-    value: 'gemini-3.1-flash-image-preview',
-    label: 'Gemini 3.1 Flash Image',
-    tag: '速度优先',
-    description: '更快响应，适合高频迭代。',
-  },
-  {
-    value: 'gemini-3-pro-image-preview',
-    label: 'Gemini 3 Pro Image',
-    tag: '质量优先',
-    description: '更强细节和构图能力，适合最终稿。',
-  },
-];
-
-const FLASH_ASPECT_RATIO_OPTIONS = [
-  { value: '1:1', label: '1:1' },
-  { value: '1:4', label: '1:4' },
-  { value: '1:8', label: '1:8' },
-  { value: '2:3', label: '2:3' },
-  { value: '3:2', label: '3:2' },
-  { value: '3:4', label: '3:4' },
-  { value: '4:1', label: '4:1' },
-  { value: '4:3', label: '4:3' },
-  { value: '4:5', label: '4:5' },
-  { value: '5:4', label: '5:4' },
-  { value: '8:1', label: '8:1' },
-  { value: '9:16', label: '9:16' },
-  { value: '16:9', label: '16:9' },
-  { value: '21:9', label: '21:9' },
-];
-
-const PRO_ASPECT_RATIO_OPTIONS = [
-  { value: '1:1', label: '1:1' },
-  { value: '2:3', label: '2:3' },
-  { value: '3:2', label: '3:2' },
-  { value: '3:4', label: '3:4' },
-  { value: '4:3', label: '4:3' },
-  { value: '4:5', label: '4:5' },
-  { value: '5:4', label: '5:4' },
-  { value: '9:16', label: '9:16' },
-  { value: '16:9', label: '16:9' },
-  { value: '21:9', label: '21:9' },
-];
-
-const COUNT_OPTIONS = [1, 2, 4];
+const COUNT_OPTIONS: readonly NumberOfImages[] = [1, 2, 4];
 
 const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
   { value: 'minimal', label: 'LOW (默认)' },
@@ -78,21 +33,6 @@ const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
 const RESPONSE_MODALITY_OPTIONS: { value: ResponseModality; label: string }[] = [
   { value: 'text_image', label: 'TEXT + IMAGE' },
   { value: 'image', label: 'IMAGE ONLY' },
-];
-
-const FLASH_IMAGE_SIZE_OPTIONS = [
-  { value: '', label: '默认' },
-  { value: '512', label: '512' },
-  { value: '1K', label: '1K' },
-  { value: '2K', label: '2K' },
-  { value: '4K', label: '4K' },
-];
-
-const PRO_IMAGE_SIZE_OPTIONS = [
-  { value: '', label: '默认' },
-  { value: '1K', label: '1K' },
-  { value: '2K', label: '2K' },
-  { value: '4K', label: '4K' },
 ];
 
 function Switch({
@@ -137,8 +77,7 @@ function Switch({
 }
 
 export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDrawerProps) {
-  const isFlashModel = settings.model === 'gemini-3.1-flash-image-preview';
-  const isProModel = settings.model === 'gemini-3-pro-image-preview';
+  const modelSupportsImageSearch = supportsImageSearch(settings.model);
   const [devLogs, setDevLogs] = useState<DevLogEntry[]>(() => getDevLogs());
 
   useEffect(() => {
@@ -167,8 +106,12 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
     onChange({ ...settings, ...partial });
   };
 
-  const aspectRatioOptions = isFlashModel ? FLASH_ASPECT_RATIO_OPTIONS : PRO_ASPECT_RATIO_OPTIONS;
-  const imageSizeOptions = isFlashModel ? FLASH_IMAGE_SIZE_OPTIONS : PRO_IMAGE_SIZE_OPTIONS;
+  const aspectRatioOptions = getAllowedAspectRatios(settings.model).map((value) => ({ value, label: value }));
+  const aspectRatioValue = settings.aspectRatio || getDefaultAspectRatio(settings.model);
+  const imageSizeOptions = getAllowedImageSizes(settings.model).map((value) => ({
+    value,
+    label: value || '默认',
+  }));
 
   return (
     <>
@@ -202,25 +145,33 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                 <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-3)]">模型</p>
                 <button
                   type="button"
-                  onClick={() => onChange(DEFAULT_CHAT_SETTINGS)}
+                  onClick={() => onChange({ ...DEFAULT_IMAGE_CHAT_SETTINGS })}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-2 py-1 text-xs text-[var(--text-2)] hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   恢复默认
                 </button>
               </div>
-              {MODEL_OPTIONS.map((model) => (
+              {IMAGE_MODEL_OPTIONS.map((model) => (
                 <button
                   key={model.value}
                   type="button"
                   onClick={() => {
                     if (model.value === settings.model) return;
-                    const next: Partial<ImageChatSettings> = { model: model.value };
-                    if (model.value === 'gemini-3-pro-image-preview') {
-                      if (settings.imageSize === '512') next.imageSize = '';
-                      next.enableImageSearch = false;
-                    }
-                    updatePartial(next);
+                    const normalizedTools = normalizeSearchToolsForModel(
+                      model.value,
+                      settings.enableGoogleSearch,
+                      settings.enableImageSearch
+                    );
+                    updatePartial({
+                      model: model.value,
+                      aspectRatio:
+                        normalizeAspectRatioForModel(model.value, settings.aspectRatio)
+                        || getDefaultAspectRatio(model.value),
+                      imageSize: normalizeImageSizeForModel(model.value, settings.imageSize),
+                      enableGoogleSearch: normalizedTools.enableGoogleSearch,
+                      enableImageSearch: normalizedTools.enableImageSearch,
+                    });
                   }}
                   className={cn(
                     'w-full rounded-2xl border p-3 text-left transition-all',
@@ -244,7 +195,7 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               <label className="space-y-1.5">
                 <span className="text-xs text-[var(--text-3)]">宽高比</span>
                 <select
-                  value={settings.aspectRatio ?? '1:1'}
+                  value={aspectRatioValue}
                   onChange={(e) => update('aspectRatio', e.target.value)}
                   className="input-base"
                 >
@@ -259,8 +210,8 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               <label className="space-y-1.5">
                 <span className="text-xs text-[var(--text-3)]">数量</span>
                 <select
-                  value={settings.numberOfImages ?? 1}
-                  onChange={(e) => update('numberOfImages', Number(e.target.value))}
+                  value={settings.numberOfImages}
+                  onChange={(e) => update('numberOfImages', Number(e.target.value) as NumberOfImages)}
                   className="input-base"
                 >
                   {COUNT_OPTIONS.map((count) => (
@@ -274,7 +225,7 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               <label className="space-y-1.5">
                 <span className="text-xs text-[var(--text-3)]">图片尺寸</span>
                 <select
-                  value={settings.imageSize ?? ''}
+                  value={settings.imageSize}
                   onChange={(e) => update('imageSize', e.target.value)}
                   className="input-base"
                 >
@@ -309,7 +260,7 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                 <label className="space-y-1.5">
                   <span className="text-xs text-[var(--text-3)]">思考级别</span>
                   <select
-                    value={settings.thinkingLevel ?? 'minimal'}
+                    value={settings.thinkingLevel}
                     onChange={(e) => update('thinkingLevel', e.target.value as ThinkingLevel)}
                     className="input-base"
                   >
@@ -325,14 +276,14 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                 <p className="text-xs text-[var(--text-3)]">思考输出</p>
                 <Switch
                   label="显示思考内容"
-                  checked={settings.includeThoughts ?? true}
+                  checked={settings.includeThoughts}
                   onChange={(value) => update('includeThoughts', value)}
                 />
               </div>
               <label className="space-y-1.5">
                 <span className="text-xs text-[var(--text-3)]">响应模态</span>
                 <select
-                  value={settings.responseModality ?? 'text_image'}
+                  value={settings.responseModality}
                   onChange={(e) => update('responseModality', e.target.value as ResponseModality)}
                   className="input-base"
                 >
@@ -354,23 +305,35 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               </div>
               <Switch
                 label="Google Search"
-                checked={settings.enableGoogleSearch ?? false}
+                checked={settings.enableGoogleSearch}
                 onChange={(value) => {
+                  const normalizedTools = normalizeSearchToolsForModel(
+                    settings.model,
+                    value,
+                    settings.enableImageSearch
+                  );
                   updatePartial({
-                    enableGoogleSearch: value,
-                    enableImageSearch: value ? (settings.enableImageSearch ?? false) : false,
+                    enableGoogleSearch: normalizedTools.enableGoogleSearch,
+                    enableImageSearch: normalizedTools.enableImageSearch,
                   });
                 }}
               />
               <Switch
                 label="Google Image Search"
-                checked={settings.enableImageSearch ?? false}
-                disabled={!settings.enableGoogleSearch || isProModel}
-                onChange={(value) => update('enableImageSearch', value)}
+                checked={settings.enableImageSearch}
+                disabled={!settings.enableGoogleSearch || !modelSupportsImageSearch}
+                onChange={(value) => {
+                  const normalizedTools = normalizeSearchToolsForModel(
+                    settings.model,
+                    settings.enableGoogleSearch,
+                    value
+                  );
+                  update('enableImageSearch', normalizedTools.enableImageSearch);
+                }}
               />
-              {isProModel && (
+              {!modelSupportsImageSearch && (
                 <p className="text-[11px] text-[var(--text-3)]">
-                  Gemini 3 Pro Image 不支持 Google Image Search。
+                  {getImageModelLabel(settings.model)} 不支持 Google Image Search。
                 </p>
               )}
             </section>

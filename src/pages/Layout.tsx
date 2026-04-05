@@ -4,6 +4,7 @@ import { Sparkles, Plus, Settings2, History, MessageSquare, Trash2, X } from 'lu
 import { DarkModeToggle } from '../components/ui';
 import { SettingsDrawer } from '../components/image/SettingsDrawer';
 import { useImageChat, type UseImageChatReturn } from '../hooks/useImageChat';
+import { getImageModelLabel } from '../config/imageModelCapabilities';
 
 export type LayoutOutletContext = UseImageChatReturn;
 
@@ -13,9 +14,7 @@ export function Layout() {
   const chat = useImageChat();
   const { newChat, settings, setSettings, sessions, activeSessionId, switchSession, deleteSession } = chat;
 
-  const activeModelLabel = settings.model === 'gemini-3-pro-image-preview'
-    ? 'Gemini 3 Pro Image'
-    : 'Gemini 3.1 Flash Image';
+  const activeModelLabel = getImageModelLabel(settings.model);
 
   const formatTime = (timestamp: number) =>
     new Date(timestamp).toLocaleString('zh-CN', {
