@@ -17,6 +17,7 @@ import { chatImageGeneration } from '../lib/gemini';
 import type { ChatGenerationConfig } from '../lib/gemini';
 import { stripDataUrlPrefix } from '../lib/utils';
 import { pushDevLog } from '../lib/devConsole';
+import { normalizeChatContextTurn } from '../lib/chatContext';
 import {
   DEFAULT_IMAGE_CHAT_SETTINGS,
   getDefaultAspectRatio,
@@ -24,6 +25,7 @@ import {
   normalizeAspectRatioForModel,
   normalizeImageSizeForModel,
   normalizeSearchToolsForModel,
+  normalizeThinkingLevelForModel,
   supportsThinkingConfig,
 } from '../config/imageModelCapabilities';
 
@@ -39,9 +41,6 @@ const CHAT_IDB_ACTIVE_SESSION_KEY = 'activeSessionId';
 const ALLOWED_NUMBER_OF_IMAGES: ReadonlySet<NumberOfImages> = new Set([1, 2, 4]);
 const isNumberOfImages = (value: unknown): value is NumberOfImages => {
   return typeof value === 'number' && ALLOWED_NUMBER_OF_IMAGES.has(value as NumberOfImages);
-};
-const isThinkingLevel = (value: unknown): value is NonNullable<ImageChatSettings['thinkingLevel']> => {
-  return value === 'minimal' || value === 'high';
 };
 const isResponseModality = (value: unknown): value is NonNullable<ImageChatSettings['responseModality']> => {
   return value === 'text_image' || value === 'image';
@@ -101,30 +100,7 @@ const dataUrlToImagePart = (dataUrl: string): UserContextPart => ({
   },
 });
 
-const isValidContextPart = (value: unknown): value is ChatContextPart => {
-  return Boolean(value) && typeof value === 'object';
-};
-
-const normalizeContextTurn = (raw: unknown): ChatContextTurn | null => {
-  if (!raw || typeof raw !== 'object') return null;
-  const value = raw as { role?: unknown; parts?: unknown };
-  if (value.role !== 'user' && value.role !== 'model') return null;
-  if (!Array.isArray(value.parts)) return null;
-
-  const parts = value.parts.filter(isValidContextPart).map((part) => {
-    try {
-      return JSON.parse(JSON.stringify(part)) as ChatContextPart;
-    } catch {
-      return null;
-    }
-  }).filter((part): part is ChatContextPart => Boolean(part));
-
-  if (parts.length === 0) return null;
-  return {
-    role: value.role,
-    parts,
-  };
-};
+const normalizeContextTurn = (raw: unknown): ChatContextTurn | null => normalizeChatContextTurn(raw);
 
 const buildUserContextTurn = (content: string, attachments?: string[]): ChatContextTurn | null => {
   const parts: UserContextPart[] = [];
@@ -594,10 +570,9 @@ function normalizeSettings(input: unknown): ImageChatSettings {
     next.numberOfImages = candidate.numberOfImages;
   }
 
-  if (isThinkingLevel(candidate.thinkingLevel)) {
-    next.thinkingLevel = candidate.thinkingLevel;
-  }
-  if (!supportsThinkingConfig(next.model)) {
+  if (supportsThinkingConfig(next.model)) {
+    next.thinkingLevel = normalizeThinkingLevelForModel(next.model, candidate.thinkingLevel, next.thinkingLevel);
+  } else {
     next.thinkingLevel = DEFAULT_IMAGE_CHAT_SETTINGS.thinkingLevel;
   }
 
@@ -671,6 +646,19 @@ export function useImageChat(): UseImageChatReturn {
   const sessionsRef = useRef<ChatSession[]>(sessions);
   const activeSessionIdRef = useRef(activeSessionId);
 
+  const setSessionsWithRef = useCallback((updater: React.SetStateAction<ChatSession[]>) => {
+    const next = typeof updater === 'function'
+      ? (updater as (prevState: ChatSession[]) => ChatSession[])(sessionsRef.current)
+      : updater;
+    sessionsRef.current = next;
+    setSessions(next);
+  }, []);
+
+  const setActiveSessionIdWithRef = useCallback((sessionId: string) => {
+    activeSessionIdRef.current = sessionId;
+    setActiveSessionId(sessionId);
+  }, []);
+
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
@@ -703,8 +691,8 @@ export function useImageChat(): UseImageChatReturn {
         : hydratedSessions[0].id;
 
       if (cancelled) return;
-      setSessions(hydratedSessions);
-      setActiveSessionId(hydratedActiveSessionId);
+      setSessionsWithRef(hydratedSessions);
+      setActiveSessionIdWithRef(hydratedActiveSessionId);
       setStorageHydrated(true);
     };
 
@@ -714,15 +702,15 @@ export function useImageChat(): UseImageChatReturn {
       });
       if (cancelled) return;
       const fallbackSession = createSession();
-      setSessions([fallbackSession]);
-      setActiveSessionId(fallbackSession.id);
+      setSessionsWithRef([fallbackSession]);
+      setActiveSessionIdWithRef(fallbackSession.id);
       setStorageHydrated(true);
     });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setActiveSessionIdWithRef, setSessionsWithRef]);
 
   useEffect(() => {
     if (!storageHydrated) return;
@@ -733,9 +721,9 @@ export function useImageChat(): UseImageChatReturn {
     if (!storageHydrated) return;
     // 仅在校验失败时修复 activeSessionId
     if (sessions.length > 0 && !sessions.some((session) => session.id === activeSessionId)) {
-      setActiveSessionId(sessions[0].id);
+      setActiveSessionIdWithRef(sessions[0].id);
     }
-  }, [activeSessionId, sessions, storageHydrated]);
+  }, [activeSessionId, sessions, setActiveSessionIdWithRef, storageHydrated]);
 
   useEffect(() => {
     if (!storageHydrated) return;
@@ -804,11 +792,11 @@ export function useImageChat(): UseImageChatReturn {
     abortControllerRef.current = null;
     setIsLoading(false);
     setError(null);
-    setActiveSessionId(sessionId);
-  }, [activeSessionId, sessions, storageHydrated]);
+    setActiveSessionIdWithRef(sessionId);
+  }, [activeSessionId, sessions, setActiveSessionIdWithRef, storageHydrated]);
 
   const updateSessionMessages = useCallback((sessionId: string, nextMessages: ChatMessage[], titleOverride?: string) => {
-    setSessions((prev) => {
+    setSessionsWithRef((prev) => {
       return prev.map((session) => {
         if (session.id !== sessionId) return session;
         const firstUserMessage = nextMessages.find(
@@ -825,7 +813,7 @@ export function useImageChat(): UseImageChatReturn {
         };
       });
     });
-  }, []);
+  }, [setSessionsWithRef]);
 
   const getCurrentSession = useCallback((): ChatSession | undefined => {
     const latestSessions = sessionsRef.current;
@@ -972,10 +960,10 @@ export function useImageChat(): UseImageChatReturn {
     if (!storageHydrated) return;
     cancel();
     const session = createSession();
-    setSessions((prev) => [session, ...prev]);
-    setActiveSessionId(session.id);
+    setSessionsWithRef((prev) => [session, ...prev]);
+    setActiveSessionIdWithRef(session.id);
     setError(null);
-  }, [cancel, storageHydrated]);
+  }, [cancel, setActiveSessionIdWithRef, setSessionsWithRef, storageHydrated]);
 
   const deleteSession = useCallback((sessionId: string) => {
     if (!storageHydrated) return;
@@ -987,20 +975,20 @@ export function useImageChat(): UseImageChatReturn {
       setIsLoading(false);
     }
 
-    setSessions((prev) => {
+    setSessionsWithRef((prev) => {
       const remaining = prev.filter((session) => session.id !== sessionId);
       if (remaining.length === 0) {
         const fallback = createSession();
-        setActiveSessionId(fallback.id);
+        setActiveSessionIdWithRef(fallback.id);
         return [fallback];
       }
       if (activeSessionId === sessionId) {
-        setActiveSessionId(remaining[0].id);
+        setActiveSessionIdWithRef(remaining[0].id);
       }
       return remaining;
     });
     setError(null);
-  }, [activeSessionId, storageHydrated]);
+  }, [activeSessionId, setActiveSessionIdWithRef, setSessionsWithRef, storageHydrated]);
 
   const retryFromMessage = useCallback(async (messageIndex: number) => {
     if (!storageHydrated) return;

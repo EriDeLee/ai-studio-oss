@@ -1,9 +1,11 @@
-import type { ImageChatSettings, ImageModel, ImageTaskType, ModelConfig } from '../types';
+import type { ImageChatSettings, ImageModel, ImageTaskType, ModelConfig, ThinkingLevel } from '../types';
 
 type ImageModelCatalogItem = ModelConfig & {
   tag: string;
   supportsImageSearch: boolean;
   supportsThinkingConfig: boolean;
+  supportsThinkingLevelParam: boolean;
+  fixedThinkingLevel?: ThinkingLevel;
   allowedImageSizes: readonly string[];
   allowedAspectRatios: readonly string[];
 };
@@ -50,6 +52,7 @@ const IMAGE_MODEL_CATALOG: readonly ImageModelCatalogItem[] = [
     maxImages: 4,
     supportsImageSearch: true,
     supportsThinkingConfig: true,
+    supportsThinkingLevelParam: true,
     allowedImageSizes: FLASH_IMAGE_SIZES,
     allowedAspectRatios: FLASH_ASPECT_RATIOS,
   },
@@ -61,7 +64,9 @@ const IMAGE_MODEL_CATALOG: readonly ImageModelCatalogItem[] = [
     supportedTaskTypes: [...IMAGE_TASK_TYPES],
     maxImages: 4,
     supportsImageSearch: false,
-    supportsThinkingConfig: false,
+    supportsThinkingConfig: true,
+    supportsThinkingLevelParam: false,
+    fixedThinkingLevel: 'high',
     allowedImageSizes: PRO_IMAGE_SIZES,
     allowedAspectRatios: PRO_ASPECT_RATIOS,
   },
@@ -117,6 +122,24 @@ export const supportsImageSearch = (model: ImageModel): boolean => {
 
 export const supportsThinkingConfig = (model: ImageModel): boolean => {
   return IMAGE_MODEL_CATALOG_MAP[model].supportsThinkingConfig;
+};
+
+export const supportsThinkingLevelParam = (model: ImageModel): boolean => {
+  return IMAGE_MODEL_CATALOG_MAP[model].supportsThinkingLevelParam;
+};
+
+export const getFixedThinkingLevel = (model: ImageModel): ThinkingLevel | undefined => {
+  return IMAGE_MODEL_CATALOG_MAP[model].fixedThinkingLevel;
+};
+
+export const normalizeThinkingLevelForModel = (
+  _model: ImageModel,
+  thinkingLevel: unknown,
+  fallbackLevel: ThinkingLevel = DEFAULT_IMAGE_CHAT_SETTINGS.thinkingLevel
+): ThinkingLevel => {
+  return thinkingLevel === 'minimal' || thinkingLevel === 'high'
+    ? thinkingLevel
+    : fallbackLevel;
 };
 
 export const getAllowedImageSizes = (model: ImageModel): readonly string[] => {

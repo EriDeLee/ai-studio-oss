@@ -9,12 +9,14 @@ import {
   getAllowedAspectRatios,
   getAllowedImageSizes,
   getDefaultAspectRatio,
+  getFixedThinkingLevel,
   getImageModelLabel,
   normalizeAspectRatioForModel,
   normalizeImageSizeForModel,
   normalizeSearchToolsForModel,
   supportsImageSearch,
   supportsThinkingConfig,
+  supportsThinkingLevelParam,
 } from '../../config/imageModelCapabilities';
 
 interface SettingsDrawerProps {
@@ -80,6 +82,8 @@ function Switch({
 export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDrawerProps) {
   const modelSupportsImageSearch = supportsImageSearch(settings.model);
   const modelSupportsThinkingConfig = supportsThinkingConfig(settings.model);
+  const modelSupportsThinkingLevelParam = supportsThinkingLevelParam(settings.model);
+  const modelFixedThinkingLevel = getFixedThinkingLevel(settings.model);
   const [devLogs, setDevLogs] = useState<DevLogEntry[]>(() => getDevLogs());
 
   useEffect(() => {
@@ -260,7 +264,7 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                   runtime
                 </span>
               </div>
-              {modelSupportsThinkingConfig && (
+              {modelSupportsThinkingConfig && !modelFixedThinkingLevel && modelSupportsThinkingLevelParam && (
                 <label className="space-y-1.5">
                   <span className="text-xs text-[var(--text-3)]">思考级别</span>
                   <select
@@ -270,11 +274,18 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                   >
                     {THINKING_LEVEL_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
+              )}
+              {modelSupportsThinkingConfig && modelFixedThinkingLevel && (
+                <p className="rounded-lg border border-amber-300/70 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  当前模型 {getImageModelLabel(settings.model)} 的思考级别固定为
+                  {' '}
+                  {modelFixedThinkingLevel.toUpperCase()}，不支持调整。
+                </p>
               )}
               <label className="space-y-1.5">
                 <span className="text-xs text-[var(--text-3)]">响应模态</span>

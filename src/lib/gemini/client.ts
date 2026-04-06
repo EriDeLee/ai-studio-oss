@@ -20,7 +20,9 @@ import {
   normalizeImageSizeForModel,
   normalizeSearchToolsForModel,
   supportsThinkingConfig,
+  supportsThinkingLevelParam,
 } from '../../config/imageModelCapabilities';
+import { normalizeChatContextPart } from '../chatContext';
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 2000;
@@ -399,10 +401,13 @@ const buildOfficialGenerationConfig = (input: OfficialRequestConfigInput): Gemin
   }
 
   if (supportsThinkingConfig(input.model)) {
-    config.thinkingConfig = {
-      thinkingLevel: toGeminiThinkingLevel(input.thinkingLevel ?? 'minimal'),
+    const thinkingConfig: NonNullable<GeminiGenerationConfig['thinkingConfig']> = {
       includeThoughts: true,
     };
+    if (supportsThinkingLevelParam(input.model)) {
+      thinkingConfig.thinkingLevel = toGeminiThinkingLevel(input.thinkingLevel ?? 'minimal');
+    }
+    config.thinkingConfig = thinkingConfig;
   }
 
   return config;
@@ -541,12 +546,7 @@ const extractOrderedPartsFromResponse = (response: GenerateContentResponse): Ass
 };
 
 const toSerializableContextPart = (part: Part): ChatContextPart | null => {
-  if (!part || typeof part !== 'object') return null;
-  try {
-    return JSON.parse(JSON.stringify(part)) as ChatContextPart;
-  } catch {
-    return null;
-  }
+  return normalizeChatContextPart(part);
 };
 
 const extractModelContextTurn = (response: GenerateContentResponse): ModelContextTurn | undefined => {
