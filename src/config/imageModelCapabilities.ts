@@ -83,7 +83,7 @@ export const DEFAULT_IMAGE_CHAT_SETTINGS: ImageChatSettings = {
   aspectRatio: FLASH_ASPECT_RATIOS[0],
   numberOfImages: 1,
   imageSize: '',
-  thinkingLevel: 'minimal',
+  thinkingLevel: 'high',
   responseModality: 'text_image',
   enableGoogleSearch: false,
   enableImageSearch: false,

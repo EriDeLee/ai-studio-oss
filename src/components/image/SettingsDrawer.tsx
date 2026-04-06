@@ -29,7 +29,7 @@ interface SettingsDrawerProps {
 const COUNT_OPTIONS: readonly NumberOfImages[] = [1, 2, 4];
 
 const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
-  { value: 'minimal', label: 'MINIMAL (默认)' },
+  { value: 'minimal', label: 'MINIMAL' },
   { value: 'high', label: 'HIGH' },
 ];
 
