@@ -17,8 +17,9 @@ pnpm dev
 
 ## Environment Variables
 
-- `VITE_GEMINI_API_KEY`: Gemini API Key（必填）
-- `VITE_GEMINI_BASE_URL`: 可选自定义网关地址
+- `PASSWORD`: 访问密码（由 `middleware.js` 校验，必填）
+- `GEMINI_API_KEY`: Gemini API Key（必填，兼容 `VITE_GEMINI_API_KEY`）
+- `GEMINI_API_BASE_URL`: 可选自定义网关地址（兼容 `VITE_GEMINI_BASE_URL`）
 
 ## Scripts
 

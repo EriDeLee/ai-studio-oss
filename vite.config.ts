@@ -5,6 +5,8 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
+  envPrefix: ['VITE_', 'GEMINI_'],
+
   plugins: [
     react(),
     mode === 'analyze' && visualizer({

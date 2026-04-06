@@ -232,15 +232,15 @@ const delayWithAbort = (delay: number, signal?: AbortSignal): Promise<void> => {
 };
 
 const getApiKey = (): string => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY ?? import.meta.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('VITE_GEMINI_API_KEY environment variable is not set');
+    throw new Error('Missing Gemini API key: set VITE_GEMINI_API_KEY or GEMINI_API_KEY');
   }
   return apiKey;
 };
 
 const getBaseUrl = (): string | undefined => {
-  return import.meta.env.VITE_GEMINI_BASE_URL;
+  return import.meta.env.VITE_GEMINI_BASE_URL ?? import.meta.env.GEMINI_API_BASE_URL;
 };
 
 let client: GoogleGenAI | null = null;
