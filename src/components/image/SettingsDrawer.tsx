@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, Settings2, RotateCcw, Bug } from 'lucide-react';
-import type { ImageChatSettings, ThinkingLevel, ResponseModality, NumberOfImages } from '../../types';
+import type { ImageChatSettings, ThinkingLevel, ResponseModality } from '../../types';
 import { cn } from '../../lib/utils';
 import { DEV_LOG_EVENT_NAME, clearDevLogs, getDevLogs, type DevLogEntry } from '../../lib/devConsole';
 import {
@@ -25,8 +25,6 @@ interface SettingsDrawerProps {
   open: boolean;
   onClose: () => void;
 }
-
-const COUNT_OPTIONS: readonly NumberOfImages[] = [1, 2, 4];
 
 const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
   { value: 'minimal', label: 'MINIMAL' },
@@ -197,70 +195,50 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
               ))}
             </section>
 
-            <section className="grid grid-cols-2 gap-3">
-              <label className="space-y-1.5">
-                <span className="text-xs text-[var(--text-3)]">宽高比</span>
-                <select
-                  value={aspectRatioValue}
-                  onChange={(e) => update('aspectRatio', e.target.value)}
-                  className="input-base"
-                >
-                  {aspectRatioOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <section className="space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-3)]">画幅与尺寸</p>
+                <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-[var(--text-3)] dark:bg-white/10">
+                  image
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1.5">
+                  <span className="text-xs text-[var(--text-3)]">宽高比</span>
+                  <select
+                    value={aspectRatioValue}
+                    onChange={(e) => update('aspectRatio', e.target.value)}
+                    className="input-base"
+                  >
+                    {aspectRatioOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="space-y-1.5">
-                <span className="text-xs text-[var(--text-3)]">数量</span>
-                <select
-                  value={settings.numberOfImages}
-                  onChange={(e) => update('numberOfImages', Number(e.target.value) as NumberOfImages)}
-                  className="input-base"
-                >
-                  {COUNT_OPTIONS.map((count) => (
-                    <option key={count} value={count}>
-                      {count}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1.5">
-                <span className="text-xs text-[var(--text-3)]">图片尺寸</span>
-                <select
-                  value={settings.imageSize}
-                  onChange={(e) => update('imageSize', e.target.value)}
-                  className="input-base"
-                >
-                  {imageSizeOptions.map((opt) => (
-                    <option key={opt.value || 'default'} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="space-y-1.5">
-                <span className="text-xs text-[var(--text-3)]">种子</span>
-                <input
-                  type="number"
-                  value={settings.seed ?? ''}
-                  onChange={(e) => update('seed', e.target.value ? Number(e.target.value) : undefined)}
-                  className="input-base"
-                  min={0}
-                  step={1}
-                  placeholder="留空随机"
-                />
-              </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs text-[var(--text-3)]">图片尺寸</span>
+                  <select
+                    value={settings.imageSize}
+                    onChange={(e) => update('imageSize', e.target.value)}
+                    className="input-base"
+                  >
+                    {imageSizeOptions.map((opt) => (
+                      <option key={opt.value || 'default'} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </section>
 
-            <section className="space-y-4 rounded-2xl border border-primary-300/35 bg-gradient-to-br from-primary-50/70 to-transparent p-3 dark:border-primary-700/40 dark:from-primary-900/20">
+            <section className="space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-3 dark:border-white/10 dark:bg-white/[0.03]">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-3)]">推理与输出</p>
-                <span className="rounded-full bg-primary-500/12 px-2 py-0.5 text-[10px] text-primary-700 dark:text-primary-300">
+                <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-[var(--text-3)] dark:bg-white/10">
                   runtime
                 </span>
               </div>

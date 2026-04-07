@@ -49,7 +49,6 @@ const IMAGE_MODEL_CATALOG: readonly ImageModelCatalogItem[] = [
     description: '更快响应，适合高频迭代。',
     tag: '速度优先',
     supportedTaskTypes: [...IMAGE_TASK_TYPES],
-    maxImages: 4,
     supportsImageSearch: true,
     supportsThinkingConfig: true,
     supportsThinkingLevelParam: true,
@@ -62,7 +61,6 @@ const IMAGE_MODEL_CATALOG: readonly ImageModelCatalogItem[] = [
     description: '更强细节和构图能力，适合最终稿。',
     tag: '质量优先',
     supportedTaskTypes: [...IMAGE_TASK_TYPES],
-    maxImages: 4,
     supportsImageSearch: false,
     supportsThinkingConfig: true,
     supportsThinkingLevelParam: false,
@@ -81,7 +79,6 @@ export const DEFAULT_IMAGE_MODEL: ImageModel = 'gemini-3.1-flash-image-preview';
 export const DEFAULT_IMAGE_CHAT_SETTINGS: ImageChatSettings = {
   model: DEFAULT_IMAGE_MODEL,
   aspectRatio: FLASH_ASPECT_RATIOS[0],
-  numberOfImages: 1,
   imageSize: '',
   thinkingLevel: 'high',
   responseModality: 'text_image',
@@ -101,7 +98,6 @@ export const IMAGE_MODELS: ModelConfig[] = IMAGE_MODEL_CATALOG.map((item) => ({
   name: item.name,
   description: item.description,
   supportedTaskTypes: [...item.supportedTaskTypes],
-  maxImages: item.maxImages,
 }));
 
 export const getModelConfig = (modelId: ImageModel): ModelConfig | undefined => {

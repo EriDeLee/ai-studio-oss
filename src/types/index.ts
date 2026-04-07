@@ -17,16 +17,13 @@ export type ThinkingLevel = 'minimal' | 'high';
 
 // 响应模态
 export type ResponseModality = 'text_image' | 'image';
-export type NumberOfImages = 1 | 2 | 4;
 
 // 图像生成请求
 export interface TextToImageRequest {
   type: 'text-to-image';
   model: ImageModel;
   prompt: string;
-  numberOfImages?: NumberOfImages;
   aspectRatio?: string;
-  seed?: number;
   imageSize?: string;
   thinkingLevel?: ThinkingLevel;
   responseModality?: ResponseModality;
@@ -40,8 +37,6 @@ export interface ImageToImageRequest {
   prompt: string;
   referenceImages: string[];
   referenceImageMimeTypes?: string[];
-  numberOfImages?: NumberOfImages;
-  seed?: number;
 }
 
 export interface InpaintingRequest {
@@ -51,8 +46,6 @@ export interface InpaintingRequest {
   referenceImages: string[];
   maskImage?: string;
   referenceImageMimeTypes?: string[];
-  numberOfImages?: NumberOfImages;
-  seed?: number;
 }
 
 export type ImageGenerationRequest =
@@ -119,7 +112,6 @@ export interface ModelConfig {
   name: string;
   description: string;
   supportedTaskTypes: ImageTaskType[];
-  maxImages: number;
 }
 
 // Chat message
@@ -166,8 +158,6 @@ export interface ChatSessionSummary {
 export interface ImageChatSettings {
   model: ImageModel;
   aspectRatio: string;
-  numberOfImages: NumberOfImages;
-  seed?: number;
   imageSize: string;
   thinkingLevel: ThinkingLevel;
   responseModality: ResponseModality;

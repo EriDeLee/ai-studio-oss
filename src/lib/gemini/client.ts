@@ -9,7 +9,6 @@ import type {
   ImageGenerationResponse,
   ImageModel,
   ModelContextTurn,
-  NumberOfImages,
   ResponseModality,
   ThinkingLevel,
 } from '../../types';
@@ -23,9 +22,6 @@ import {
   supportsThinkingLevelParam,
 } from '../../config/imageModelCapabilities';
 import { normalizeChatContextPart } from '../chatContext';
-
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 2000;
 
 type ImageMimeType =
   | 'image/png'
@@ -43,12 +39,10 @@ type ContentPart =
 
 type GeminiGenerationConfig = Pick<
   GenerateContentConfig,
-  'candidateCount' | 'seed' | 'imageConfig' | 'thinkingConfig' | 'responseModalities'
+  'imageConfig' | 'thinkingConfig' | 'responseModalities'
 >;
 
 export interface ChatGenerationConfig {
-  numberOfImages?: NumberOfImages;
-  seed?: number;
   aspectRatio?: string;
   imageSize?: string;
   thinkingLevel?: ThinkingLevel;
@@ -195,42 +189,6 @@ const toGeminiThinkingLevel = (
   >;
 };
 
-const createAbortError = (): Error => {
-  const error = new Error('Aborted');
-  error.name = 'AbortError';
-  return error;
-};
-
-const throwIfAborted = (signal?: AbortSignal) => {
-  if (signal?.aborted) {
-    throw createAbortError();
-  }
-};
-
-const delayWithAbort = (delay: number, signal?: AbortSignal): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(createAbortError());
-      return;
-    }
-
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      reject(createAbortError());
-    };
-
-    const timer = setTimeout(() => {
-      if (signal) {
-        signal.removeEventListener('abort', onAbort);
-      }
-      resolve();
-    }, delay);
-
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-};
-
 const getApiKey = (): string => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -254,40 +212,6 @@ const getClient = (): GoogleGenAI => {
     });
   }
   return client;
-};
-
-const withRetry = async <T>(
-  fn: () => Promise<T>,
-  operationName: string,
-  signal?: AbortSignal
-): Promise<T> => {
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-    try {
-      throwIfAborted(signal);
-      return await fn();
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-
-      if (lastError.name === 'AbortError') {
-        throw lastError;
-      }
-
-      if (attempt === MAX_RETRIES) {
-        break;
-      }
-
-      const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
-      console.warn(
-        `${operationName} 请求失败，${delay / 1000}秒后重试（${attempt + 1}/${MAX_RETRIES}）:`,
-        lastError.message
-      );
-      await delayWithAbort(delay, signal);
-    }
-  }
-
-  throw lastError ?? new Error(`${operationName} 请求失败`);
 };
 
 const buildContents = (request: ImageGenerationRequest): string | ContentPart[] => {
@@ -347,41 +271,16 @@ const toGeminiResponseModalities = (responseModality?: ResponseModality): string
 
 interface OfficialRequestConfigInput {
   model: ImageModel;
-  numberOfImages?: NumberOfImages;
-  seed?: number;
   aspectRatio?: string;
   imageSize?: string;
   thinkingLevel?: ThinkingLevel;
   responseModality?: ResponseModality;
 }
 
-const ALLOWED_CANDIDATE_COUNTS: ReadonlySet<number> = new Set([1, 2, 4]);
-
-const normalizeCandidateCount = (value: unknown): NumberOfImages | undefined => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  if (!ALLOWED_CANDIDATE_COUNTS.has(value)) return undefined;
-  return value as NumberOfImages;
-};
-
-const normalizeSeed = (value: unknown): number | undefined => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  if (!Number.isInteger(value) || value < 0) return undefined;
-  return value;
-};
-
 const buildOfficialGenerationConfig = (input: OfficialRequestConfigInput): GeminiGenerationConfig => {
   const config: GeminiGenerationConfig = {
     responseModalities: toGeminiResponseModalities(input.responseModality),
   };
-
-  const candidateCount = normalizeCandidateCount(input.numberOfImages);
-  if (candidateCount !== undefined) {
-    config.candidateCount = candidateCount;
-  }
-  const seed = normalizeSeed(input.seed);
-  if (seed !== undefined) {
-    config.seed = seed;
-  }
 
   const imageConfig: GeminiGenerationConfig['imageConfig'] = {};
   if (input.aspectRatio) {
@@ -601,8 +500,6 @@ export const generateImage = async (
   const contents = buildContents(request);
   const generationConfig = buildOfficialGenerationConfig({
     model: request.model,
-    numberOfImages: request.numberOfImages,
-    seed: request.seed,
     responseModality: request.type === 'text-to-image' ? request.responseModality : undefined,
     aspectRatio: request.type === 'text-to-image' ? request.aspectRatio : undefined,
     imageSize: request.type === 'text-to-image' ? request.imageSize : undefined,
@@ -613,13 +510,6 @@ export const generateImage = async (
     request.type === 'text-to-image' ? request.enableGoogleSearch : undefined,
     request.type === 'text-to-image' ? request.enableImageSearch : undefined
   );
-
-  const operationName =
-    request.type === 'text-to-image'
-      ? '文生图'
-      : request.type === 'image-to-image'
-        ? '图生图'
-        : '图像编辑';
 
   const executeRequest = async () => {
     const response = await ai.models.generateContent({
@@ -635,7 +525,7 @@ export const generateImage = async (
     return response;
   };
 
-  const response = await withRetry(executeRequest, operationName, signal);
+  const response = await executeRequest();
   const orderedParts = extractOrderedPartsFromResponse(response);
   const modelContextTurn = extractModelContextTurn(response);
   const images = extractImagesFromResponse(response, 'final');
@@ -671,8 +561,6 @@ export const chatImageGeneration = async (
 
   const generationConfig = buildOfficialGenerationConfig({
     model,
-    numberOfImages: config.numberOfImages,
-    seed: config.seed,
     aspectRatio: config.aspectRatio,
     imageSize: config.imageSize,
     thinkingLevel: config.thinkingLevel,
@@ -701,7 +589,7 @@ export const chatImageGeneration = async (
     return response;
   };
 
-  const response = await withRetry(executeRequest, '对话生成', signal);
+  const response = await executeRequest();
   const orderedParts = extractOrderedPartsFromResponse(response);
   const modelContextTurn = extractModelContextTurn(response);
   const images = extractImagesFromResponse(response, 'final');

@@ -8,7 +8,6 @@ import type {
   ChatSession,
   ChatSessionSummary,
   ImageChatSettings,
-  NumberOfImages,
   GeneratedImage,
   AssistantResponsePart,
   ModelContextTurn,
@@ -29,7 +28,7 @@ import {
   supportsThinkingConfig,
 } from '../config/imageModelCapabilities';
 
-const SETTINGS_STORAGE_KEY = 'ai-studio:image-chat-settings:v3';
+const SETTINGS_STORAGE_KEY = 'ai-studio:image-chat-settings:v4';
 const SETTINGS_EVENT_NAME = 'ai-studio:image-chat-settings-updated';
 // Forward-only policy: chat sessions are persisted in IndexedDB only.
 // We intentionally do not migrate or fallback to legacy localStorage chat session keys.
@@ -38,17 +37,8 @@ const CHAT_IDB_STORE = 'chat-kv';
 const CHAT_IDB_SESSIONS_KEY = 'sessions';
 const CHAT_IDB_ACTIVE_SESSION_KEY = 'activeSessionId';
 
-const ALLOWED_NUMBER_OF_IMAGES: ReadonlySet<NumberOfImages> = new Set([1, 2, 4]);
-const isNumberOfImages = (value: unknown): value is NumberOfImages => {
-  return typeof value === 'number' && ALLOWED_NUMBER_OF_IMAGES.has(value as NumberOfImages);
-};
 const isResponseModality = (value: unknown): value is NonNullable<ImageChatSettings['responseModality']> => {
   return value === 'text_image' || value === 'image';
-};
-const normalizeSeed = (value: unknown): number | undefined => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  if (!Number.isInteger(value) || value < 0) return undefined;
-  return value;
 };
 
 type ImageMimeType =
@@ -561,15 +551,6 @@ function normalizeSettings(input: unknown): ImageChatSettings {
 
   next.imageSize = normalizeImageSizeForModel(next.model, candidate.imageSize);
 
-  const normalizedSeed = normalizeSeed(candidate.seed);
-  if (normalizedSeed !== undefined) {
-    next.seed = normalizedSeed;
-  }
-
-  if (isNumberOfImages(candidate.numberOfImages)) {
-    next.numberOfImages = candidate.numberOfImages;
-  }
-
   if (supportsThinkingConfig(next.model)) {
     next.thinkingLevel = normalizeThinkingLevelForModel(next.model, candidate.thinkingLevel, next.thinkingLevel);
   } else {
@@ -872,7 +853,6 @@ export function useImageChat(): UseImageChatReturn {
 
         const config: ChatGenerationConfig = {
           aspectRatio: settings.aspectRatio,
-          numberOfImages: settings.numberOfImages,
           responseModality: settings.responseModality,
           enableGoogleSearch: settings.enableGoogleSearch,
           enableImageSearch: settings.enableImageSearch,
@@ -880,12 +860,10 @@ export function useImageChat(): UseImageChatReturn {
         if (supportsThinkingConfig(settings.model)) {
           config.thinkingLevel = settings.thinkingLevel;
         }
-        if (settings.seed !== undefined) config.seed = settings.seed;
         if (settings.imageSize) config.imageSize = settings.imageSize;
 
         pushDevLog('chat.send', 'request-config', 'info', {
           model: settings.model,
-          numberOfImages: config.numberOfImages,
           thinkingLevel: config.thinkingLevel,
           responseModality: config.responseModality,
           historyLength: baseMessages.length,
