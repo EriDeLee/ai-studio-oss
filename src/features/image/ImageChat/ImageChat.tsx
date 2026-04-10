@@ -19,6 +19,11 @@ interface SelectedImage {
   mimeType: string;
 }
 
+interface AttachmentPreviewState {
+  sessionId: string;
+  images: SelectedImage[];
+}
+
 const toValidIndex = (index: number | null, length: number): number | null => {
   if (index === null || index < 0 || index >= length) {
     return null;
@@ -26,10 +31,26 @@ const toValidIndex = (index: number | null, length: number): number | null => {
   return index;
 };
 
+const parseDataUrlImage = (value: string): SelectedImage | null => {
+  const matched = /^data:([^;,]+);base64,([\s\S]+)$/i.exec(value);
+  if (!matched) return null;
+  const mimeType = matched[1]?.trim().toLowerCase();
+  const base64 = matched[2]?.trim();
+  if (!mimeType?.startsWith('image/') || !base64) return null;
+  return { mimeType, base64 };
+};
+
+const normalizeAttachmentsToImages = (attachments: string[]): SelectedImage[] => {
+  return attachments
+    .map((attachment) => parseDataUrlImage(attachment))
+    .filter((image): image is SelectedImage => Boolean(image));
+};
+
 export function ImageChat() {
   const { messages, isLoading, send, retryFromMessage, getMessageForEdit, activeSessionId } = useOutletContext<LayoutOutletContext>();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [attachmentPreviewState, setAttachmentPreviewState] = useState<AttachmentPreviewState | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const activeEditState = editState?.sessionId === activeSessionId ? editState : null;
 
@@ -41,8 +62,11 @@ export function ImageChat() {
     [messages]
   );
 
-  const safeSelectedIndex = toValidIndex(selectedIndex, conversationImages.length);
-  const safePreviewIndex = toValidIndex(previewIndex, conversationImages.length);
+  const activePreviewImages = attachmentPreviewState?.sessionId === activeSessionId
+    ? attachmentPreviewState.images
+    : conversationImages;
+  const safeSelectedIndex = toValidIndex(selectedIndex, activePreviewImages.length);
+  const safePreviewIndex = toValidIndex(previewIndex, activePreviewImages.length);
 
   const handleSend = useCallback(
     (content: string, attachments?: string[]) => {
@@ -94,17 +118,30 @@ export function ImageChat() {
   );
 
   const handleImageSelect = useCallback((_image: SelectedImage, index: number) => {
+    setAttachmentPreviewState(null);
     setSelectedIndex(index);
     setPreviewIndex(index);
   }, []);
 
-  const selectedImage = safeSelectedIndex !== null ? conversationImages[safeSelectedIndex] : null;
-  const previewImage = safePreviewIndex !== null ? conversationImages[safePreviewIndex] : null;
+  const handleUserAttachmentSelect = useCallback((attachments: string[], index: number) => {
+    const images = normalizeAttachmentsToImages(attachments);
+    if (images.length === 0) return;
+    const safeIndex = Math.min(Math.max(index, 0), images.length - 1);
+    setAttachmentPreviewState({
+      sessionId: activeSessionId,
+      images,
+    });
+    setSelectedIndex(safeIndex);
+    setPreviewIndex(safeIndex);
+  }, [activeSessionId]);
+
+  const selectedImage = safeSelectedIndex !== null ? activePreviewImages[safeSelectedIndex] : null;
+  const previewImage = safePreviewIndex !== null ? activePreviewImages[safePreviewIndex] : null;
 
   const hasPrevious = safeSelectedIndex !== null && safeSelectedIndex > 0;
-  const hasNext = safeSelectedIndex !== null && safeSelectedIndex < conversationImages.length - 1;
+  const hasNext = safeSelectedIndex !== null && safeSelectedIndex < activePreviewImages.length - 1;
   const hasPreviewPrevious = safePreviewIndex !== null && safePreviewIndex > 0;
-  const hasPreviewNext = safePreviewIndex !== null && safePreviewIndex < conversationImages.length - 1;
+  const hasPreviewNext = safePreviewIndex !== null && safePreviewIndex < activePreviewImages.length - 1;
 
   const openPrevious = useCallback(() => {
     setSelectedIndex((prev) => {
@@ -116,9 +153,9 @@ export function ImageChat() {
   const openNext = useCallback(() => {
     setSelectedIndex((prev) => {
       if (prev === null) return prev;
-      return Math.min(prev + 1, Math.max(conversationImages.length - 1, 0));
+      return Math.min(prev + 1, Math.max(activePreviewImages.length - 1, 0));
     });
-  }, [conversationImages.length]);
+  }, [activePreviewImages.length]);
 
   const openPreviewPrevious = useCallback(() => {
     setPreviewIndex((prev) => {
@@ -131,12 +168,12 @@ export function ImageChat() {
 
   const openPreviewNext = useCallback(() => {
     setPreviewIndex((prev) => {
-      if (prev === null || prev >= conversationImages.length - 1) return prev;
+      if (prev === null || prev >= activePreviewImages.length - 1) return prev;
       const next = prev + 1;
       setSelectedIndex(next);
       return next;
     });
-  }, [conversationImages.length]);
+  }, [activePreviewImages.length]);
 
   return (
     <div className="image-chat-grid">
@@ -145,6 +182,7 @@ export function ImageChat() {
           messages={messages}
           isLoading={isLoading}
           onImageSelect={handleImageSelect}
+          onUserAttachmentSelect={handleUserAttachmentSelect}
           onRetry={handleRetry}
           onEdit={handleEdit}
         />
@@ -165,7 +203,7 @@ export function ImageChat() {
             <Images className="h-3.5 w-3.5" />
             本次对话图库
           </div>
-          <span className="text-xs text-[var(--text-3)]">{conversationImages.length} 张</span>
+          <span className="text-xs text-[var(--text-3)]">{activePreviewImages.length} 张</span>
         </div>
 
         {selectedImage ? (
@@ -201,7 +239,7 @@ export function ImageChat() {
             </div>
 
             <div className="grid max-h-44 grid-cols-4 gap-2 overflow-y-auto border-t border-black/10 p-3 dark:border-white/10">
-              {conversationImages.map((image, index) => (
+              {activePreviewImages.map((image, index) => (
                 <button
                   key={`${index}-${image.base64.slice(0, 16)}`}
                   type="button"
@@ -229,7 +267,7 @@ export function ImageChat() {
             <button
               type="button"
               onClick={() => setSelectedIndex(0)}
-              disabled={conversationImages.length === 0}
+              disabled={activePreviewImages.length === 0}
               className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 text-xs text-[var(--text-2)] disabled:opacity-40 dark:border-white/10"
             >
               <Images className="h-4 w-4" />
@@ -256,7 +294,7 @@ export function ImageChat() {
           key={`${safePreviewIndex ?? 0}-${previewImage.base64.slice(0, 24)}`}
           image={previewImage}
           currentIndex={safePreviewIndex ?? 0}
-          total={conversationImages.length}
+          total={activePreviewImages.length}
           onPrevious={hasPreviewPrevious ? openPreviewPrevious : undefined}
           onNext={hasPreviewNext ? openPreviewNext : undefined}
           onClose={() => setPreviewIndex(null)}

@@ -16,6 +16,7 @@ interface ChatMessageListProps {
     image: { base64: string; mimeType: string },
     index: number
   ) => void;
+  onUserAttachmentSelect?: (attachments: string[], index: number) => void;
   onRetry?: (messageIndex: number) => void;
   onEdit?: (messageIndex: number) => void;
 }
@@ -23,6 +24,7 @@ interface ChatMessageListProps {
 interface UserMessageProps {
   message: ChatUserMessage;
   messageIndex: number;
+  onUserAttachmentSelect?: (attachments: string[], index: number) => void;
   onRetry?: (messageIndex: number) => void;
   onEdit?: (messageIndex: number) => void;
 }
@@ -49,7 +51,7 @@ interface OrderedAssistantContentProps {
   onCopy: (image: GeneratedImage) => void;
 }
 
-function UserMessage({ message: msg, messageIndex, onRetry, onEdit }: UserMessageProps) {
+function UserMessage({ message: msg, messageIndex, onUserAttachmentSelect, onRetry, onEdit }: UserMessageProps) {
   return (
     <div className="flex justify-end group">
       <div className="max-w-[92%] space-y-2">
@@ -87,12 +89,15 @@ function UserMessage({ message: msg, messageIndex, onRetry, onEdit }: UserMessag
         {msg.attachments && msg.attachments.length > 0 && (
           <div className="flex gap-2 justify-end">
             {msg.attachments.map((img, index) => (
-              <div
+              <button
                 key={index}
+                type="button"
+                onClick={() => onUserAttachmentSelect?.(msg.attachments ?? [], index)}
                 className="h-16 w-16 overflow-hidden rounded-xl border border-primary-300/60 sm:h-20 sm:w-20"
+                aria-label={`查看参考图 ${index + 1}`}
               >
                 <img src={img} alt={`参考图 ${index + 1}`} className="h-full w-full object-cover" />
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -425,7 +430,7 @@ function LoadingBubble() {
   );
 }
 
-export function ChatMessageList({ messages, isLoading, onImageSelect, onRetry, onEdit }: ChatMessageListProps) {
+export function ChatMessageList({ messages, isLoading, onImageSelect, onUserAttachmentSelect, onRetry, onEdit }: ChatMessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const renderedMessages = useMemo(() => {
@@ -440,6 +445,7 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, onRetry, o
             key={messageKey}
             message={message}
             messageIndex={index}
+            onUserAttachmentSelect={onUserAttachmentSelect}
             onRetry={onRetry}
             onEdit={onEdit}
           />
@@ -459,7 +465,7 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, onRetry, o
     });
 
     return nodes;
-  }, [messages, onEdit, onImageSelect, onRetry]);
+  }, [messages, onEdit, onImageSelect, onRetry, onUserAttachmentSelect]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
