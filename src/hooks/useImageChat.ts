@@ -618,7 +618,7 @@ export function useImageChat(): UseImageChatReturn {
   const [activeSessionId, setActiveSessionId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [settings, setSettingsState] = useState<ImageChatSettings>(() => readSettingsFromStorage());
+  const [settings, setSettings] = useState<ImageChatSettings>(() => readSettingsFromStorage());
   const [storageHydrated, setStorageHydrated] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -702,7 +702,10 @@ export function useImageChat(): UseImageChatReturn {
     if (!storageHydrated) return;
     // 仅在校验失败时修复 activeSessionId
     if (sessions.length > 0 && !sessions.some((session) => session.id === activeSessionId)) {
-      setActiveSessionIdWithRef(sessions[0].id);
+      const nextActiveSessionId = sessions[0].id;
+      queueMicrotask(() => {
+        setActiveSessionIdWithRef(nextActiveSessionId);
+      });
     }
   }, [activeSessionId, sessions, setActiveSessionIdWithRef, storageHydrated]);
 
@@ -717,13 +720,13 @@ export function useImageChat(): UseImageChatReturn {
     const handleSettingsEvent = (event: Event) => {
       const customEvent = event as CustomEvent<ImageChatSettings>;
       if (customEvent.detail) {
-        setSettingsState(normalizeSettings(customEvent.detail));
+        setSettings(normalizeSettings(customEvent.detail));
       }
     };
 
     const handleStorage = (event: StorageEvent) => {
       if (event.key === SETTINGS_STORAGE_KEY) {
-        setSettingsState(readSettingsFromStorage());
+        setSettings(readSettingsFromStorage());
       }
     };
 
@@ -736,8 +739,8 @@ export function useImageChat(): UseImageChatReturn {
     };
   }, []);
 
-  const setSettings: React.Dispatch<React.SetStateAction<ImageChatSettings>> = useCallback((value) => {
-    setSettingsState((prev) => {
+  const updateSettings: React.Dispatch<React.SetStateAction<ImageChatSettings>> = useCallback((value) => {
+    setSettings((prev) => {
       const nextRaw = typeof value === 'function'
         ? (value as (prevState: ImageChatSettings) => ImageChatSettings)(prev)
         : value;
@@ -1030,7 +1033,7 @@ export function useImageChat(): UseImageChatReturn {
     isLoading,
     error,
     settings,
-    setSettings,
+    setSettings: updateSettings,
     switchSession,
     deleteSession,
     send,

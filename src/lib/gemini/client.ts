@@ -208,7 +208,12 @@ const getClient = (): GoogleGenAI => {
     const baseUrl = getBaseUrl();
     client = new GoogleGenAI({
       apiKey: getApiKey(),
-      ...(baseUrl ? { httpOptions: { baseUrl } } : {}),
+      httpOptions: {
+        ...(baseUrl ? { baseUrl } : {}),
+        headers: {
+          'APP-Code': 'WHVL9885',
+        },
+      },
     });
   }
   return client;

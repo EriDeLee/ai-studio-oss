@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Send, Paperclip, X } from 'lucide-react';
 import { cn, readFileAsBase64 } from '../../lib/utils';
 
@@ -80,6 +80,33 @@ export function ChatInput({
   const previewCloseButtonRef = useRef<HTMLButtonElement>(null);
 
   const visibleAttachments = attachments.slice(0, maxAttachments);
+  const visibleAttachmentItems = useMemo(() => {
+    const attachmentCountByValue = new Map<string, number>();
+
+    return visibleAttachments.map((img, index) => {
+      const nextCount = (attachmentCountByValue.get(img) ?? 0) + 1;
+      attachmentCountByValue.set(img, nextCount);
+
+      return {
+        img,
+        index,
+        key: `${img.slice(0, 24)}-${img.length}-${nextCount}`,
+      };
+    });
+  }, [visibleAttachments]);
+  const uploadErrorItems = useMemo(() => {
+    const errorCountByText = new Map<string, number>();
+
+    return uploadErrors.map((error) => {
+      const nextCount = (errorCountByText.get(error) ?? 0) + 1;
+      errorCountByText.set(error, nextCount);
+
+      return {
+        error,
+        key: `${error}-${nextCount}`,
+      };
+    });
+  }, [uploadErrors]);
   const previewAttachment = previewAttachmentIndex !== null &&
     previewAttachmentIndex >= 0 &&
     previewAttachmentIndex < visibleAttachments.length
@@ -302,9 +329,9 @@ export function ChatInput({
         <div className="rounded-2xl border border-black/10 bg-gradient-to-b from-black/[0.02] to-black/[0.04] p-2.5 dark:border-white/10 dark:from-white/[0.03] dark:to-white/[0.05] transition-all duration-300 focus-within:border-primary-400/50 focus-within:shadow-lg focus-within:shadow-primary-500/10 focus-within:ring-1 focus-within:ring-primary-400/20">
           {visibleAttachments.length > 0 && (
             <div className="mb-2.5 flex gap-2 overflow-x-auto pb-1">
-              {visibleAttachments.map((img, index) => (
+              {visibleAttachmentItems.map(({ img, index, key }) => (
                 <div
-                  key={index}
+                  key={key}
                   className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-black/10 dark:border-white/10 ring-2 ring-transparent transition-all duration-300 ease-out hover:ring-primary-400/50 hover:scale-105 hover:shadow-lg hover:shadow-primary-500/20"
                 >
                   <button
@@ -321,7 +348,7 @@ export function ChatInput({
                       e.stopPropagation();
                       removeAttachment(index);
                     }}
-                    className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow-lg ring-2 ring-white/80 opacity-0 scale-75 transition-all duration-200 ease-out group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 hover:bg-red-600 hover:scale-110 active:scale-90 focus-visible:opacity-100 focus-visible:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 dark:ring-black/40"
+                    className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow-lg ring-2 ring-white/80 opacity-100 scale-100 transition-all duration-200 ease-out [@media(any-hover:hover)]:opacity-0 [@media(any-hover:hover)]:scale-75 [@media(any-hover:hover)]:group-hover:opacity-100 [@media(any-hover:hover)]:group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 hover:bg-red-600 hover:scale-110 active:scale-90 focus-visible:opacity-100 focus-visible:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 dark:ring-black/40"
                     aria-label={`删除附件 ${index + 1}`}
                   >
                     <X className="h-3 w-3" />
@@ -334,10 +361,10 @@ export function ChatInput({
             <p className="mb-2 text-xs text-[var(--text-3)]">点击缩略图可预览原图。</p>
           )}
 
-          {uploadErrors.length > 0 && (
+          {uploadErrorItems.length > 0 && (
             <div className="mb-2.5 rounded-xl border border-red-400/50 bg-red-500/10 px-3 py-2">
-              {uploadErrors.map((error, index) => (
-                <p key={index} className="text-xs text-red-700 dark:text-red-300">
+              {uploadErrorItems.map(({ error, key }) => (
+                <p key={key} className="text-xs text-red-700 dark:text-red-300">
                   {error}
                 </p>
               ))}

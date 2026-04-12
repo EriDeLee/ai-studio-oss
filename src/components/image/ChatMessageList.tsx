@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, type ReactElement } from 'react';
+import { useRef, useEffect, useMemo, useCallback, type ReactElement } from 'react';
 import { Sparkles, User, AlertCircle, Image as ImageIcon, RotateCcw, Pencil } from 'lucide-react';
 import type {
   ChatMessage,
@@ -46,6 +46,14 @@ interface OrderedAssistantContentProps {
   onImageClick?: (image: GeneratedImage, index: number) => void;
 }
 
+const createStableImageKey = (image: GeneratedImage): string => {
+  return `${image.mimeType}-${image.base64.slice(0, 24)}-${image.base64.length}`;
+};
+
+const createStableResponsePartKey = (part: AssistantResponsePart): string => {
+  return `${part.candidateIndex}-${part.partIndex}-${part.type}-${part.bucket}-${part.thought}`;
+};
+
 function UserMessage({ message: msg, messageIndex, onUserAttachmentSelect, onRetry, onEdit }: UserMessageProps) {
   return (
     <div className="flex justify-end group">
@@ -83,17 +91,21 @@ function UserMessage({ message: msg, messageIndex, onUserAttachmentSelect, onRet
 
         {msg.attachments && msg.attachments.length > 0 && (
           <div className="flex gap-2 justify-end">
-            {msg.attachments.map((img, index) => (
-              <button
-                key={index}
-                type="button"
-                onClick={() => onUserAttachmentSelect?.(msg.attachments ?? [], index)}
-                className="h-16 w-16 overflow-hidden rounded-xl border border-primary-300/60 sm:h-20 sm:w-20"
-                aria-label={`查看参考图 ${index + 1}`}
-              >
-                <img src={img} alt={`参考图 ${index + 1}`} className="h-full w-full object-cover" />
-              </button>
-            ))}
+            {msg.attachments.map((img, index) => {
+              const attachmentKey = `${img.slice(0, 24)}-${img.length}-${index}`;
+
+              return (
+                <button
+                  key={attachmentKey}
+                  type="button"
+                  onClick={() => onUserAttachmentSelect?.(msg.attachments ?? [], index)}
+                  className="h-16 w-16 overflow-hidden rounded-xl border border-primary-300/60 sm:h-20 sm:w-20"
+                  aria-label={`查看参考图 ${index + 1}`}
+                >
+                  <img src={img} alt={`参考图 ${index + 1}`} className="h-full w-full object-cover" />
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -128,17 +140,25 @@ function ImageGrid({
 }) {
   if (images.length === 0) return null;
 
+  const imageCountBySignature = new Map<string, number>();
+
   return (
     <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(images.length, 2)}, minmax(0, 1fr))` }}>
-      {images.map((image, index) => (
-        <ImageCard
-          key={`${image.base64.slice(0, 16)}-${index}`}
-          image={image}
-          alt={`${altPrefix} ${index + 1}`}
-          selectableIndex={imageStartIndex + index}
-          onImageClick={onImageClick}
-        />
-      ))}
+      {images.map((image, index) => {
+        const signature = createStableImageKey(image);
+        const nextCount = (imageCountBySignature.get(signature) ?? 0) + 1;
+        imageCountBySignature.set(signature, nextCount);
+
+        return (
+          <ImageCard
+            key={`${signature}-${nextCount}`}
+            image={image}
+            alt={`${altPrefix} ${index + 1}`}
+            selectableIndex={imageStartIndex + index}
+            onImageClick={onImageClick}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -153,10 +173,12 @@ function ThinkingDetails({ parts }: ThinkingDetailsProps) {
       </summary>
       <div className="mt-2 space-y-2">
         {parts.map((part, index) => {
+          const partKey = createStableResponsePartKey(part);
+
           if (part.type === 'text' && part.text?.trim()) {
             return (
               <p
-                key={`thinking-text-${part.candidateIndex}-${part.partIndex}-${index}`}
+                key={`thinking-text-${partKey}`}
                 className="whitespace-pre-wrap break-words text-[var(--text-2)]"
               >
                 {part.text}
@@ -167,7 +189,7 @@ function ThinkingDetails({ parts }: ThinkingDetailsProps) {
           if (part.type === 'image' && part.image) {
             return (
               <div
-                key={`thinking-image-${part.candidateIndex}-${part.partIndex}-${index}`}
+                key={`thinking-image-${partKey}`}
                 className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
               >
                 <img
@@ -216,10 +238,12 @@ function OrderedAssistantContent({
       {showThinking && <ThinkingDetails parts={thinkingParts} />}
 
       {mainParts.map((part, index) => {
+        const partKey = createStableResponsePartKey(part);
+
         if (part.type === 'text' && part.text?.trim()) {
           return (
             <div
-              key={`part-text-${part.candidateIndex}-${part.partIndex}-${index}`}
+              key={`part-text-${partKey}`}
               className="rounded-xl bg-black/[0.03] px-3 py-2 text-sm whitespace-pre-wrap break-words text-[var(--text-2)] dark:bg-white/[0.03]"
             >
               {part.text}
@@ -235,7 +259,7 @@ function OrderedAssistantContent({
 
         return (
           <ImageCard
-            key={`part-image-${part.candidateIndex}-${part.partIndex}-${index}`}
+            key={`part-image-${partKey}`}
             image={part.image}
             alt={`AI 生成图像 ${index + 1}`}
             selectableIndex={selectableIndex}
@@ -256,14 +280,18 @@ function OrderedAssistantContent({
             其他
           </summary>
           <div className="mt-2 space-y-2">
-            {otherParts.map((part, index) => (
-              <pre
-                key={`other-${part.candidateIndex}-${part.partIndex}-${index}`}
-                className="overflow-auto rounded-lg border border-amber-300/40 bg-black/[0.04] p-2 text-[11px] leading-4 text-[var(--text-2)] dark:border-amber-700/40 dark:bg-white/[0.04]"
-              >
-                {JSON.stringify(part.raw, null, 2)}
-              </pre>
-            ))}
+            {otherParts.map((part) => {
+              const partKey = createStableResponsePartKey(part);
+
+              return (
+                <pre
+                  key={`other-${partKey}`}
+                  className="overflow-auto rounded-lg border border-amber-300/40 bg-black/[0.04] p-2 text-[11px] leading-4 text-[var(--text-2)] dark:border-amber-700/40 dark:bg-white/[0.04]"
+                >
+                  {JSON.stringify(part.raw, null, 2)}
+                </pre>
+              );
+            })}
           </div>
         </details>
       )}
@@ -283,6 +311,22 @@ function AssistantMessage({
   const isError = msg.kind === 'error';
   const hasOrderedParts = Array.isArray(msg.orderedParts) && msg.orderedParts.length > 0;
   const showThinking = true;
+  const thinkingFallbackImages = useMemo(() => {
+    const sourceImages = Array.isArray(msg.thinkingImages) ? msg.thinkingImages : [];
+    const imageCountBySignature = new Map<string, number>();
+
+    return sourceImages.map((image, index) => {
+      const signature = createStableImageKey(image);
+      const nextCount = (imageCountBySignature.get(signature) ?? 0) + 1;
+      imageCountBySignature.set(signature, nextCount);
+
+      return {
+        image,
+        index,
+        key: `thinking-fallback-${signature}-${nextCount}`,
+      };
+    });
+  }, [msg.thinkingImages]);
 
   return (
     <div className="flex justify-start">
@@ -314,11 +358,11 @@ function AssistantMessage({
                     <p className="mt-2 whitespace-pre-wrap break-words text-[var(--text-2)]">
                       {msg.thinking}
                     </p>
-                    {Array.isArray(msg.thinkingImages) && msg.thinkingImages.length > 0 && (
-                      <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(msg.thinkingImages.length, 2)}, minmax(0, 1fr))` }}>
-                        {msg.thinkingImages.map((image, index) => (
+                    {thinkingFallbackImages.length > 0 && (
+                      <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(thinkingFallbackImages.length, 2)}, minmax(0, 1fr))` }}>
+                        {thinkingFallbackImages.map(({ image, index, key }) => (
                           <div
-                            key={`thinking-fallback-${index}`}
+                            key={key}
                             className="overflow-hidden rounded-lg border border-violet-300/40 bg-black/5 dark:border-violet-700/40 dark:bg-white/5"
                           >
                             <img
@@ -358,28 +402,20 @@ function LoadingBubble() {
         <div className="avatar-dot bg-gradient-to-br from-primary-100 to-primary-200 text-primary-700 animate-pulse-soft dark:from-primary-900/50 dark:to-primary-800/30 dark:text-primary-300">
           <Sparkles className="w-4 h-4" />
         </div>
-        <div className="chat-bubble assistant-bubble bg-gradient-to-r from-[var(--panel)] to-primary-50/30 dark:to-primary-900/20 min-w-[140px]">
-          <div className="flex items-center gap-3">
-            {/* 波浪动画 */}
-            <div className="flex gap-1">
-              {[0, 1, 2].map((i) => (
+        <div className="chat-bubble assistant-bubble bg-gradient-to-r from-[var(--panel)] to-primary-50/30 dark:to-primary-900/20 min-w-[84px]">
+          <div className="flex items-center">
+            <div className="flex gap-1.5">
+              {[0, 1, 2].map((step) => (
                 <div
-                  key={i}
-                  className="h-2 w-2 rounded-full bg-primary-400 animate-bounce shadow-sm shadow-primary-500/30"
+                  key={`loading-dot-${step}`}
+                  className="h-2.5 w-2.5 rounded-full bg-primary-500 animate-bounce shadow-sm shadow-primary-500/30"
                   style={{
-                    animationDelay: `${i * 150}ms`,
+                    animationDelay: `${step * 150}ms`,
                     animationDuration: '1s'
                   }}
                 />
               ))}
             </div>
-            <span className="text-xs text-[var(--text-3)] font-medium animate-pulse-soft">
-              正在构思画面...
-            </span>
-          </div>
-          {/* 进度条 */}
-          <div className="mt-3 h-1 w-full rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
-            <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-primary-400 to-primary-500 animate-shimmer" />
           </div>
         </div>
       </div>
@@ -390,12 +426,24 @@ function LoadingBubble() {
 export function ChatMessageList({ messages, isLoading, onImageSelect, onUserAttachmentSelect, onRetry, onEdit }: ChatMessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const buildMessageKey = useCallback((message: ChatMessage): string => {
+    if (message.role === 'user') {
+      return `user-${message.timestamp}-${message.content.slice(0, 24)}-${message.attachments?.length ?? 0}`;
+    }
+
+    if (message.kind === 'error') {
+      return `assistant-error-${message.timestamp}-${message.errorMessage?.slice(0, 24) ?? ''}`;
+    }
+
+    return `assistant-normal-${message.timestamp}-${message.content?.slice(0, 24) ?? ''}-${message.images.length}`;
+  }, []);
+
   const renderedMessages = useMemo(() => {
     const nodes: ReactElement[] = [];
     let assistantImageCount = 0;
 
     messages.forEach((message, index) => {
-      const messageKey = `${message.role}-${message.timestamp}-${index}`;
+      const messageKey = buildMessageKey(message);
       if (message.role === 'user') {
         nodes.push(
           <UserMessage
@@ -422,7 +470,7 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, onUserAtta
     });
 
     return nodes;
-  }, [messages, onEdit, onImageSelect, onRetry, onUserAttachmentSelect]);
+  }, [buildMessageKey, messages, onEdit, onImageSelect, onRetry, onUserAttachmentSelect]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -462,7 +510,7 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, onUserAtta
           <div className="grid grid-cols-2 gap-3 text-xs">
             {examples.map((ex, i) => (
               <div
-                key={i}
+                key={`example-${ex}`}
                 className="group rounded-xl border border-black/10 bg-black/[0.03] p-4 text-left cursor-default transition-all duration-300 hover:border-primary-400/50 hover:bg-primary-50/50 hover:shadow-lg hover:shadow-primary-500/10 hover:-translate-y-1 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-primary-900/20"
                 style={{ animationDelay: `${i * 100}ms` }}
               >
