@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, type ReactElement } from 'react';
-import { Download, Copy, Sparkles, User, AlertCircle, Image as ImageIcon, RotateCcw, Pencil } from 'lucide-react';
+import { Sparkles, User, AlertCircle, Image as ImageIcon, RotateCcw, Pencil } from 'lucide-react';
 import type {
   ChatMessage,
   ChatUserMessage,
@@ -7,7 +7,6 @@ import type {
   GeneratedImage,
   AssistantResponsePart,
 } from '../../types';
-import { downloadBase64Image } from '../../lib/utils';
 
 interface ChatMessageListProps {
   messages: ChatMessage[];
@@ -34,8 +33,6 @@ interface ImageCardProps {
   alt: string;
   selectableIndex: number;
   onImageClick?: (image: GeneratedImage, index: number) => void;
-  onDownload: (image: GeneratedImage) => void;
-  onCopy: (image: GeneratedImage) => void;
 }
 
 interface ThinkingDetailsProps {
@@ -47,8 +44,6 @@ interface OrderedAssistantContentProps {
   imageStartIndex: number;
   showThinking: boolean;
   onImageClick?: (image: GeneratedImage, index: number) => void;
-  onDownload: (image: GeneratedImage) => void;
-  onCopy: (image: GeneratedImage) => void;
 }
 
 function UserMessage({ message: msg, messageIndex, onUserAttachmentSelect, onRetry, onEdit }: UserMessageProps) {
@@ -106,40 +101,16 @@ function UserMessage({ message: msg, messageIndex, onUserAttachmentSelect, onRet
   );
 }
 
-function ImageCard({ image, alt, selectableIndex, onImageClick, onDownload, onCopy }: ImageCardProps) {
+function ImageCard({ image, alt, selectableIndex, onImageClick }: ImageCardProps) {
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
+    <div className="group relative overflow-hidden rounded-2xl border border-black/5 bg-gradient-to-b from-black/5 to-black/10 dark:border-white/10 dark:from-white/5 dark:to-white/10 transition-all duration-500 ease-out hover:shadow-xl hover:shadow-primary-500/10 hover:-translate-y-0.5">
       <img
         src={`data:${image.mimeType};base64,${image.base64}`}
         alt={alt}
-        className="h-auto w-full cursor-pointer object-cover transition-transform duration-200 group-hover:scale-105"
+        className="h-auto w-full cursor-pointer object-cover transition-all duration-500 ease-out group-hover:scale-105 group-hover:saturate-110"
         onClick={() => onImageClick?.(image, selectableIndex)}
         loading="lazy"
       />
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:pointer-events-auto group-hover:bg-black/35 group-hover:opacity-100">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDownload(image);
-          }}
-          className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
-          aria-label="下载图片"
-        >
-          <Download className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onCopy(image);
-          }}
-          className="rounded-lg bg-white/90 p-1.5 text-zinc-800 hover:bg-white"
-          aria-label="复制图片"
-        >
-          <Copy className="h-4 w-4" />
-        </button>
-      </div>
     </div>
   );
 }
@@ -148,15 +119,11 @@ function ImageGrid({
   images,
   imageStartIndex,
   onImageClick,
-  onDownload,
-  onCopy,
   altPrefix,
 }: {
   images: GeneratedImage[];
   imageStartIndex: number;
   onImageClick?: (image: GeneratedImage, index: number) => void;
-  onDownload: (image: GeneratedImage) => void;
-  onCopy: (image: GeneratedImage) => void;
   altPrefix: string;
 }) {
   if (images.length === 0) return null;
@@ -170,8 +137,6 @@ function ImageGrid({
           alt={`${altPrefix} ${index + 1}`}
           selectableIndex={imageStartIndex + index}
           onImageClick={onImageClick}
-          onDownload={onDownload}
-          onCopy={onCopy}
         />
       ))}
     </div>
@@ -227,8 +192,6 @@ function OrderedAssistantContent({
   imageStartIndex,
   showThinking,
   onImageClick,
-  onDownload,
-  onCopy,
 }: OrderedAssistantContentProps) {
   const orderedParts = message.orderedParts ?? [];
   const thinkingParts = orderedParts.filter((part) => part.bucket === 'thinking');
@@ -277,8 +240,6 @@ function OrderedAssistantContent({
             alt={`AI 生成图像 ${index + 1}`}
             selectableIndex={selectableIndex}
             onImageClick={onImageClick}
-            onDownload={onDownload}
-            onCopy={onCopy}
           />
         );
       })}
@@ -319,20 +280,6 @@ function AssistantMessage({
   imageStartIndex?: number;
   onImageClick?: (image: { base64: string; mimeType: string }, index: number) => void;
 }) {
-  const handleDownload = (image: GeneratedImage) => {
-    downloadBase64Image(image.base64, image.mimeType, `ai-image-${Date.now()}.png`);
-  };
-
-  const handleCopy = async (image: GeneratedImage) => {
-    try {
-      const response = await fetch(`data:${image.mimeType};base64,${image.base64}`);
-      const blob = await response.blob();
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-    } catch {
-      // ignore
-    }
-  };
-
   const isError = msg.kind === 'error';
   const hasOrderedParts = Array.isArray(msg.orderedParts) && msg.orderedParts.length > 0;
   const showThinking = true;
@@ -356,8 +303,6 @@ function AssistantMessage({
                 imageStartIndex={imageStartIndex}
                 showThinking={showThinking}
                 onImageClick={onImageClick}
-                onDownload={handleDownload}
-                onCopy={handleCopy}
               />
             ) : (
               <>
@@ -395,8 +340,6 @@ function AssistantMessage({
                   images={msg.images}
                   imageStartIndex={imageStartIndex}
                   onImageClick={onImageClick}
-                  onDownload={handleDownload}
-                  onCopy={handleCopy}
                   altPrefix="AI 生成图像"
                 />
               </>
@@ -410,19 +353,33 @@ function AssistantMessage({
 
 function LoadingBubble() {
   return (
-    <div className="flex justify-start">
+    <div className="flex justify-start animate-fade-in-up">
       <div className="flex items-end gap-2">
-        <div className="avatar-dot bg-black/5 text-[var(--text-2)] dark:bg-white/10">
+        <div className="avatar-dot bg-gradient-to-br from-primary-100 to-primary-200 text-primary-700 animate-pulse-soft dark:from-primary-900/50 dark:to-primary-800/30 dark:text-primary-300">
           <Sparkles className="w-4 h-4" />
         </div>
-        <div className="chat-bubble assistant-bubble">
-          <div className="flex items-center gap-2">
+        <div className="chat-bubble assistant-bubble bg-gradient-to-r from-[var(--panel)] to-primary-50/30 dark:to-primary-900/20 min-w-[140px]">
+          <div className="flex items-center gap-3">
+            {/* 波浪动画 */}
             <div className="flex gap-1">
-              <div className="h-2 w-2 animate-bounce rounded-full bg-[var(--text-3)]" style={{ animationDelay: '0ms' }} />
-              <div className="h-2 w-2 animate-bounce rounded-full bg-[var(--text-3)]" style={{ animationDelay: '140ms' }} />
-              <div className="h-2 w-2 animate-bounce rounded-full bg-[var(--text-3)]" style={{ animationDelay: '280ms' }} />
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-2 w-2 rounded-full bg-primary-400 animate-bounce shadow-sm shadow-primary-500/30"
+                  style={{
+                    animationDelay: `${i * 150}ms`,
+                    animationDuration: '1s'
+                  }}
+                />
+              ))}
             </div>
-            <span className="text-xs text-[var(--text-3)]">正在生成...</span>
+            <span className="text-xs text-[var(--text-3)] font-medium animate-pulse-soft">
+              正在构思画面...
+            </span>
+          </div>
+          {/* 进度条 */}
+          <div className="mt-3 h-1 w-full rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
+            <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-primary-400 to-primary-500 animate-shimmer" />
           </div>
         </div>
       </div>
@@ -472,21 +429,47 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, onUserAtta
   }, [messages, isLoading]);
 
   if (messages.length === 0 && !isLoading) {
+    const examples = [
+      "生成一张电影感夜景街道",
+      "主体改成复古机车，保持光线",
+      "上传参考图，做同风格角色",
+      "给这张图再做一个更暖色版本"
+    ];
+
     return (
       <div className="chat-empty-state">
-        <div className="mx-auto max-w-xl space-y-4 text-center">
-          <div className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-500/15 text-primary-600 dark:text-primary-300">
-            <ImageIcon className="h-7 w-7" />
+        <div className="mx-auto max-w-xl space-y-6 text-center animate-fade-in-up">
+          {/* 动态 Logo */}
+          <div className="relative mx-auto inline-flex h-20 w-20 items-center justify-center">
+            {/* 外圈光晕 */}
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 opacity-20 blur-xl animate-pulse" />
+            {/* 内圈 */}
+            <div className="relative inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-xl shadow-primary-500/30 animate-spring-scale">
+              <ImageIcon className="h-8 w-8" />
+            </div>
           </div>
-          <h3 className="text-xl font-semibold tracking-tight">对话式图像工作台</h3>
-          <p className="text-sm text-[var(--text-3)]">
-            发一句提示词即可生成，继续追问即可在同一上下文里迭代图片。
-          </p>
-          <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-2)]">
-            <div className="rounded-xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">“生成一张电影感夜景街道”</div>
-            <div className="rounded-xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">“主体改成复古机车，保持光线”</div>
-            <div className="rounded-xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">“上传参考图，做同风格角色”</div>
-            <div className="rounded-xl border border-black/10 bg-black/[0.03] p-3 dark:border-white/10 dark:bg-white/[0.03]">“给这张图再做一个更暖色版本”</div>
+
+          <div className="space-y-2">
+            <h3 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-[var(--text-1)] to-[var(--text-2)] bg-clip-text text-transparent">
+              对话式图像工作台
+            </h3>
+            <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto">
+              发一句提示词即可生成，继续追问即可在同一上下文里迭代图片
+            </p>
+          </div>
+
+          {/* 示例提示卡片 */}
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            {examples.map((ex, i) => (
+              <div
+                key={i}
+                className="group rounded-xl border border-black/10 bg-black/[0.03] p-4 text-left cursor-default transition-all duration-300 hover:border-primary-400/50 hover:bg-primary-50/50 hover:shadow-lg hover:shadow-primary-500/10 hover:-translate-y-1 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-primary-900/20"
+                style={{ animationDelay: `${i * 100}ms` }}
+              >
+                <Sparkles className="h-4 w-4 text-primary-500 mb-2 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />
+                <span className="text-[var(--text-2)]">{ex}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

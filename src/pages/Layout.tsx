@@ -80,7 +80,7 @@ export function Layout() {
               {sessions.map((session) => (
                 <div
                   key={session.id}
-                  className={`history-item ${activeSessionId === session.id ? 'is-active' : ''}`}
+                  className={`history-item group ${activeSessionId === session.id ? 'is-active' : ''}`}
                 >
                   <button
                     type="button"
@@ -95,11 +95,11 @@ export function Layout() {
                   <div className="history-item-actions">
                     <button
                       type="button"
-                      className="rounded-md p-1 text-[var(--text-3)] hover:bg-black/5 hover:text-red-500 dark:hover:bg-white/10 dark:hover:text-red-400"
+                      className="rounded-lg p-1.5 text-[var(--text-3)] opacity-0 transition-all duration-200 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500 hover:scale-110 active:scale-95 dark:hover:bg-red-900/30 dark:hover:text-red-400"
                       onClick={() => deleteSession(session.id)}
                       aria-label="删除会话"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3.5 w-3.5 transition-transform duration-200 hover:rotate-12" />
                     </button>
                   </div>
                   <div className="history-item-meta">

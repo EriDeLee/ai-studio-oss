@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Paperclip, X, Image as ImageIcon } from 'lucide-react';
+import { Send, Paperclip, X } from 'lucide-react';
 import { cn, readFileAsBase64 } from '../../lib/utils';
 
 interface ChatInputProps {
@@ -274,6 +274,10 @@ export function ChatInput({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
+        const isComposing = e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229;
+        if (isComposing) {
+          return;
+        }
         e.preventDefault();
         handleSend();
       }
@@ -295,13 +299,13 @@ export function ChatInput({
       onDragLeave={handleDragLeave}
     >
       <div className="mx-auto w-full max-w-5xl">
-        <div className="rounded-2xl border border-black/10 bg-black/[0.02] p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
+        <div className="rounded-2xl border border-black/10 bg-gradient-to-b from-black/[0.02] to-black/[0.04] p-2.5 dark:border-white/10 dark:from-white/[0.03] dark:to-white/[0.05] transition-all duration-300 focus-within:border-primary-400/50 focus-within:shadow-lg focus-within:shadow-primary-500/10 focus-within:ring-1 focus-within:ring-primary-400/20">
           {visibleAttachments.length > 0 && (
             <div className="mb-2.5 flex gap-2 overflow-x-auto pb-1">
               {visibleAttachments.map((img, index) => (
                 <div
                   key={index}
-                  className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-black/10 dark:border-white/10"
+                  className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-black/10 dark:border-white/10 ring-2 ring-transparent transition-all duration-300 ease-out hover:ring-primary-400/50 hover:scale-105 hover:shadow-lg hover:shadow-primary-500/20"
                 >
                   <button
                     type="button"
@@ -309,7 +313,7 @@ export function ChatInput({
                     className="block h-full w-full"
                     aria-label={`预览附件 ${index + 1}`}
                   >
-                    <img src={img} alt={`附件 ${index + 1}`} className="h-full w-full object-cover" />
+                    <img src={img} alt={`附件 ${index + 1}`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                   </button>
                   <button
                     type="button"
@@ -317,7 +321,7 @@ export function ChatInput({
                       e.stopPropagation();
                       removeAttachment(index);
                     }}
-                    className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white shadow-md ring-1 ring-white/60 transition-colors hover:bg-red-700 dark:ring-black/20"
+                    className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow-lg ring-2 ring-white/80 opacity-0 scale-75 transition-all duration-200 ease-out group-hover:opacity-100 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:scale-100 hover:bg-red-600 hover:scale-110 active:scale-90 focus-visible:opacity-100 focus-visible:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300 dark:ring-black/40"
                     aria-label={`删除附件 ${index + 1}`}
                   >
                     <X className="h-3 w-3" />
@@ -381,21 +385,18 @@ export function ChatInput({
               onClick={handleSend}
               disabled={!canSend}
               className={cn(
-                'inline-flex h-10 items-center gap-1.5 rounded-xl px-4 text-sm font-medium transition-all',
+                'flex items-center justify-center',
+                'w-12 h-12 rounded-xl transition-all duration-200',
                 canSend
-                  ? 'bg-primary-600 text-white hover:bg-primary-700'
-                  : 'bg-black/10 text-[var(--text-3)] dark:bg-white/10'
+                  ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-lg hover:shadow-xl'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
               )}
               aria-label="发送"
             >
               {isLoading ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                <>
-                  <ImageIcon className="h-4 w-4" />
-                  生成
-                  <Send className="h-4 w-4" />
-                </>
+                <Send className="w-6 h-6" />
               )}
             </button>
           </div>

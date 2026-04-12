@@ -55,23 +55,32 @@ function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        'flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left',
-        disabled ? 'opacity-50' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.03]'
+        'flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-all duration-200',
+        disabled
+          ? 'opacity-50 cursor-not-allowed'
+          : 'hover:border-primary-300/50 hover:bg-primary-50/20 dark:hover:border-primary-700/50 dark:hover:bg-primary-900/10'
       )}
     >
-      <span className="text-sm text-[var(--text-2)]">{label}</span>
+      <span className="text-sm font-medium text-[var(--text-2)]">{label}</span>
       <span
         className={cn(
-          'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-          checked ? 'bg-primary-500' : 'bg-neutral-300 dark:bg-neutral-700'
+          'relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ease-out',
+          checked
+            ? 'bg-gradient-to-r from-primary-500 to-primary-600 shadow-inner shadow-primary-700/30'
+            : 'bg-neutral-300 dark:bg-neutral-700'
         )}
       >
         <span
           className={cn(
-            'inline-block h-4 w-4 rounded-full bg-white transition-transform',
-            checked ? 'translate-x-6' : 'translate-x-1'
+            'inline-block h-5 w-5 rounded-full bg-white shadow-md transition-all duration-300 ease-out',
+            checked
+              ? 'translate-x-6 scale-110 shadow-primary-500/30'
+              : 'translate-x-0.5'
           )}
-        />
+        >
+          {/* 滑块内部微光 */}
+          <span className="absolute inset-0 rounded-full bg-gradient-to-br from-white to-neutral-100" />
+        </span>
       </span>
     </button>
   );
@@ -123,8 +132,10 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
 
       <aside
         className={cn(
-          'fixed right-0 top-0 z-50 h-full w-[min(100vw,420px)] border-l border-black/10 bg-[var(--panel)] shadow-2xl transition-transform duration-300 dark:border-white/10',
-          open ? 'translate-x-0' : 'translate-x-full'
+          'fixed right-0 top-0 z-50 h-full w-[min(100vw,420px)] border-l border-black/10 bg-[var(--panel)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] dark:border-white/10',
+          open
+            ? 'translate-x-0 shadow-[-20px_0_60px_rgba(0,0,0,0.15)]'
+            : 'translate-x-full shadow-none'
         )}
       >
         <div className="flex h-full flex-col">
@@ -178,19 +189,23 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                     });
                   }}
                   className={cn(
-                    'w-full rounded-2xl border p-3 text-left transition-all',
+                    'w-full rounded-2xl border p-4 pl-5 text-left transition-all duration-300 ease-out relative overflow-hidden group',
                     settings.model === model.value
-                      ? 'border-primary-500 bg-primary-50/70 shadow-sm dark:bg-primary-900/20'
-                      : 'border-black/10 bg-black/[0.02] hover:border-black/20 dark:border-white/10 dark:bg-white/[0.03]'
+                      ? 'border-primary-500 bg-gradient-to-br from-primary-50/90 to-primary-100/70 shadow-lg shadow-primary-500/20 scale-[1.02] dark:border-primary-600 dark:from-primary-900/40 dark:to-primary-950/30 dark:shadow-primary-900/30'
+                      : 'border-black/10 bg-black/[0.02] hover:border-primary-300/50 hover:bg-primary-50/30 hover:shadow-md hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-primary-700/50 dark:hover:bg-primary-900/10'
                   )}
                 >
+                  {/* 选中指示条 */}
+                  {settings.model === model.value && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 rounded-r-full bg-gradient-to-b from-primary-400 to-primary-600" />
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold">{model.label}</div>
-                    <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-[var(--text-3)] dark:bg-white/10">
+                    <span className="rounded-full bg-black/5 px-2.5 py-1 text-[10px] font-medium text-[var(--text-3)] dark:bg-white/10">
                       {model.tag}
                     </span>
                   </div>
-                  <div className="mt-1 text-xs text-[var(--text-3)]">{model.description}</div>
+                  <div className="mt-1.5 text-xs text-[var(--text-3)] leading-relaxed">{model.description}</div>
                 </button>
               ))}
             </section>
