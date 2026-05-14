@@ -486,36 +486,36 @@ export function ChatMessageList({ messages, isLoading, onImageSelect, onUserAtta
 
     return (
       <div className="chat-empty-state">
-        <div className="mx-auto max-w-xl space-y-6 text-center animate-fade-in-up">
+        <div className="mx-auto w-full max-w-lg space-y-5 text-center animate-fade-in-up sm:max-w-xl sm:space-y-6">
           {/* 动态 Logo */}
-          <div className="relative mx-auto inline-flex h-20 w-20 items-center justify-center">
+          <div className="relative mx-auto inline-flex h-16 w-16 items-center justify-center sm:h-20 sm:w-20">
             {/* 外圈光晕 */}
             <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary-400 to-primary-600 opacity-20 blur-xl animate-pulse" />
             {/* 内圈 */}
-            <div className="relative inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-xl shadow-primary-500/30 animate-spring-scale">
-              <ImageIcon className="h-8 w-8" />
+            <div className="relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-xl shadow-primary-500/30 animate-spring-scale sm:h-16 sm:w-16">
+              <ImageIcon className="h-6 w-6 sm:h-8 sm:w-8" />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <h3 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-[var(--text-1)] to-[var(--text-2)] bg-clip-text text-transparent">
+          <div className="space-y-1.5 sm:space-y-2">
+            <h3 className="text-xl font-bold tracking-tight bg-gradient-to-r from-[var(--text-1)] to-[var(--text-2)] bg-clip-text text-transparent sm:text-2xl">
               对话式图像工作台
             </h3>
-            <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto">
+            <p className="text-xs text-[var(--text-3)] max-w-xs mx-auto leading-relaxed sm:text-sm sm:max-w-sm">
               发一句提示词即可生成，继续追问即可在同一上下文里迭代图片
             </p>
           </div>
 
           {/* 示例提示卡片 */}
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 sm:gap-3">
             {examples.map((ex, i) => (
               <div
                 key={`example-${ex}`}
-                className="group rounded-xl border border-black/10 bg-black/[0.03] p-4 text-left cursor-default transition-all duration-300 hover:border-primary-400/50 hover:bg-primary-50/50 hover:shadow-lg hover:shadow-primary-500/10 hover:-translate-y-1 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-primary-900/20"
-                style={{ animationDelay: `${i * 100}ms` }}
+                className="group rounded-xl border border-black/10 bg-black/[0.03] p-3 text-left cursor-default transition-all duration-300 hover:border-primary-400/50 hover:bg-primary-50/50 hover:shadow-lg hover:shadow-primary-500/10 hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-primary-900/20 sm:p-4"
+                style={{ animationDelay: `${i * 80}ms` }}
               >
-                <Sparkles className="h-4 w-4 text-primary-500 mb-2 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12" />
-                <span className="text-[var(--text-2)]">{ex}</span>
+                <Sparkles className="h-3.5 w-3.5 text-primary-500 mb-1.5 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12 sm:h-4 sm:w-4 sm:mb-2" />
+                <span className="text-[var(--text-2)] leading-snug">{ex}</span>
               </div>
             ))}
           </div>

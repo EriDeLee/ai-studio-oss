@@ -27,48 +27,48 @@ export function Layout() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="mx-auto flex h-16 w-full max-w-[1400px] items-center justify-between px-3 sm:px-5 lg:px-8">
+        <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center justify-between px-3 sm:h-16 sm:px-5 lg:px-8">
           <div className="gemini-title text-xl font-extrabold leading-tight sm:text-2xl">
-              AI Studio
-            </div>
+            AI Studio
+          </div>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-1 rounded-full border border-black/10 bg-black/5 px-3 py-1 text-xs text-[var(--text-2)] dark:border-white/10 dark:bg-white/10 md:flex">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="hidden items-center gap-1.5 rounded-full border border-black/10 bg-black/5 px-3 py-1.5 text-xs text-[var(--text-2)] dark:border-white/10 dark:bg-white/10 lg:flex">
               <Sparkles className="h-3.5 w-3.5 text-primary-500" />
               {activeModelLabel}
             </div>
             <button
               type="button"
               onClick={() => setHistoryOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-black/10 bg-[var(--panel)] px-3 py-2 text-xs font-medium text-[var(--text-1)] transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 lg:hidden"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-black/10 bg-[var(--panel)] px-2.5 py-2 text-xs font-medium text-[var(--text-1)] transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 md:hidden"
             >
               <History className="h-4 w-4" />
-              历史
+              <span className="hidden xs:inline">历史</span>
             </button>
             <button
               type="button"
               onClick={newChat}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-black/10 bg-[var(--panel)] px-3 py-2 text-xs font-medium text-[var(--text-1)] transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 sm:text-sm"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-black/10 bg-[var(--panel)] px-2.5 py-2 text-xs font-medium text-[var(--text-1)] transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 sm:px-3 sm:text-sm"
             >
               <Plus className="h-4 w-4" />
-              新对话
+              <span className="hidden sm:inline">新对话</span>
             </button>
             <DarkModeToggle />
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
-              className="rounded-xl border border-black/10 bg-[var(--panel)] p-2.5 text-[var(--text-2)] transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10"
+              className="rounded-xl border border-black/10 bg-[var(--panel)] p-2 text-[var(--text-2)] transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10 sm:p-2.5"
               aria-label="设置"
             >
-              <Settings2 className="h-5 w-5" />
+              <Settings2 className="h-4 w-4 sm:h-5 sm:w-5" />
             </button>
           </div>
         </div>
       </header>
 
-      <main className="chat-main-backdrop mx-auto flex h-[calc(100dvh-4rem)] min-h-0 w-full max-w-[1400px] min-w-0 flex-1 px-2 pb-2 pt-2 sm:px-4 sm:pb-4">
+      <main className="chat-main-backdrop mx-auto flex h-[calc(100dvh-3.5rem)] min-h-0 w-full max-w-[1400px] min-w-0 flex-1 px-2 pb-2 pt-2 sm:h-[calc(100dvh-4rem)] sm:px-3 sm:pb-3 sm:pt-2.5 lg:px-5 lg:pb-4 lg:pt-3">
         <div className="layout-grid min-h-0">
-          <aside className="history-panel hidden min-h-0 lg:flex">
+          <aside className="history-panel hidden min-h-0 md:flex">
             <div className="flex items-center justify-between border-b border-black/10 px-3 py-2.5 dark:border-white/10">
               <div className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-3)]">
                 <History className="h-3.5 w-3.5" />
@@ -125,7 +125,7 @@ export function Layout() {
       />
 
       {historyOpen && (
-        <div className="history-mobile-sheet lg:hidden">
+        <div className="history-mobile-sheet md:hidden">
           <button
             type="button"
             className="history-mobile-backdrop"

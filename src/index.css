@@ -26,7 +26,10 @@
   --color-text-3: var(--text-3);
 
   /* Custom breakpoints */
+  --breakpoint-sm: 480px;
+  --breakpoint-md: 768px;
   --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
 
   /* Animation timing variables */
   --duration-instant: 100ms;
@@ -101,10 +104,13 @@ body {
 }
 
 @utility app-header {
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  background: color-mix(in oklab, var(--panel) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: color-mix(in oklab, var(--panel) 90%, transparent);
   border-bottom: 1px solid color-mix(in oklab, black 6%, transparent);
+  position: sticky;
+  top: 0;
+  z-index: 40;
   .dark & {
     border-bottom-color: color-mix(in oklab, white 8%, transparent);
   }
@@ -154,10 +160,22 @@ body {
   width: 100%;
   min-width: 0;
   height: 100%;
+  @variant md {
+    & {
+      grid-template-columns: 15rem minmax(0, 1fr);
+      gap: 0.6rem;
+    }
+  }
   @variant lg {
     & {
       grid-template-columns: 18rem minmax(0, 1fr);
       gap: 0.75rem;
+    }
+  }
+  @variant xl {
+    & {
+      grid-template-columns: 20rem minmax(0, 1fr);
+      gap: 0.875rem;
     }
   }
 }
@@ -169,6 +187,8 @@ body {
   background: color-mix(in oklab, var(--panel) 92%, transparent);
   border-radius: 1rem;
   overflow: hidden;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   .dark & {
     border-color: color-mix(in oklab, white 8%, transparent);
   }
@@ -369,14 +389,20 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.85rem;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.75rem;
   @variant sm {
     & {
       padding: 1rem;
       gap: 1rem;
+    }
+  }
+  @variant lg {
+    & {
+      padding: 1.25rem;
+      gap: 1.25rem;
     }
   }
 }
@@ -388,6 +414,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  overflow-y: auto;
 }
 
 @utility chat-bubble {

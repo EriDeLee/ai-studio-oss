@@ -317,22 +317,27 @@ export function ChatInput({
   return (
     <div
       className={cn(
-        'border-t border-black/10 bg-[var(--panel)] p-2.5 sm:p-4 dark:border-white/10',
+        'border-t border-black/10 bg-[var(--panel)] p-2.5 sm:p-3 lg:p-4 dark:border-white/10',
         isDragging && 'bg-primary-500/10'
       )}
-      style={{ paddingBottom: 'calc(0.875rem + var(--safe-area-inset-bottom))' }}
+      style={{ paddingBottom: 'calc(0.75rem + var(--safe-area-inset-bottom))' }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
       <div className="mx-auto w-full max-w-5xl">
-        <div className="rounded-2xl border border-black/10 bg-gradient-to-b from-black/[0.02] to-black/[0.04] p-2.5 dark:border-white/10 dark:from-white/[0.03] dark:to-white/[0.05] transition-all duration-300 focus-within:border-primary-400/50 focus-within:shadow-lg focus-within:shadow-primary-500/10 focus-within:ring-1 focus-within:ring-primary-400/20">
+        <div className={cn(
+          'rounded-2xl border bg-[var(--panel)] transition-all duration-200',
+          isDragging
+            ? 'border-primary-400/60 shadow-md shadow-primary-500/10'
+            : 'border-black/10 dark:border-white/10 focus-within:border-primary-400/50 focus-within:shadow-md focus-within:shadow-primary-500/8 focus-within:ring-1 focus-within:ring-primary-400/20'
+        )}>
           {visibleAttachments.length > 0 && (
-            <div className="mb-2.5 flex gap-2 overflow-x-auto pb-1">
+            <div className="flex gap-2 overflow-x-auto px-3 pt-3 pb-1">
               {visibleAttachmentItems.map(({ img, index, key }) => (
                 <div
                   key={key}
-                  className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-xl border border-black/10 dark:border-white/10 ring-2 ring-transparent transition-all duration-300 ease-out hover:ring-primary-400/50 hover:scale-105 hover:shadow-lg hover:shadow-primary-500/20"
+                  className="group relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl border border-black/10 dark:border-white/10 ring-2 ring-transparent transition-all duration-200 hover:ring-primary-400/50 hover:scale-105"
                 >
                   <button
                     type="button"
@@ -340,7 +345,7 @@ export function ChatInput({
                     className="block h-full w-full"
                     aria-label={`预览附件 ${index + 1}`}
                   >
-                    <img src={img} alt={`附件 ${index + 1}`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                    <img src={img} alt={`附件 ${index + 1}`} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" />
                   </button>
                   <button
                     type="button"
@@ -357,12 +362,9 @@ export function ChatInput({
               ))}
             </div>
           )}
-          {visibleAttachments.length > 0 && (
-            <p className="mb-2 text-xs text-[var(--text-3)]">点击缩略图可预览原图。</p>
-          )}
 
           {uploadErrorItems.length > 0 && (
-            <div className="mb-2.5 rounded-xl border border-red-400/50 bg-red-500/10 px-3 py-2">
+            <div className="mx-3 mt-2.5 rounded-xl border border-red-400/50 bg-red-500/10 px-3 py-2">
               {uploadErrorItems.map(({ error, key }) => (
                 <p key={key} className="text-xs text-red-700 dark:text-red-300">
                   {error}
@@ -371,28 +373,28 @@ export function ChatInput({
             </div>
           )}
 
-          <div className="rounded-xl border border-black/10 bg-[var(--panel)] px-3 py-2.5 dark:border-white/10">
+          <div className="px-3 pt-2.5 sm:pt-3">
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
               rows={2}
-              className="max-h-44 min-h-[3rem] w-full resize-none overflow-y-auto bg-transparent text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] focus:outline-none"
+              className="max-h-40 min-h-[2.75rem] w-full resize-none overflow-y-auto bg-transparent text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] focus:outline-none leading-relaxed"
             />
           </div>
 
-          <div className="mt-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 px-3 pb-2.5 sm:pb-3">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={visibleAttachments.length >= maxAttachments || isLoading}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/10 bg-[var(--panel)] px-3 text-sm text-[var(--text-2)] transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:hover:bg-white/10"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-black/10 bg-[var(--bg-2)] px-2.5 text-xs text-[var(--text-2)] transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-45 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10 sm:h-10 sm:gap-2 sm:px-3 sm:text-sm"
               aria-label="上传图片"
             >
-              <Paperclip className="h-4 w-4" />
+              <Paperclip className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">添加图片</span>
-              <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[11px] dark:bg-white/10">
+              <span className="rounded-full bg-black/10 px-1.5 py-0.5 text-[10px] dark:bg-white/10 sm:text-[11px]">
                 {visibleAttachments.length}/{maxAttachments}
               </span>
             </button>
@@ -413,17 +415,17 @@ export function ChatInput({
               disabled={!canSend}
               className={cn(
                 'flex items-center justify-center',
-                'w-12 h-12 rounded-xl transition-all duration-200',
+                'h-9 w-9 rounded-xl transition-all duration-200 sm:h-10 sm:w-10',
                 canSend
-                  ? 'bg-primary-600 hover:bg-primary-700 text-white shadow-lg hover:shadow-xl'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                  ? 'bg-primary-600 hover:bg-primary-500 text-white shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0'
+                  : 'bg-black/8 dark:bg-white/8 text-[var(--text-3)] cursor-not-allowed'
               )}
               aria-label="发送"
             >
               {isLoading ? (
-                <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
-                <Send className="w-6 h-6" />
+                <Send className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
             </button>
           </div>

@@ -493,6 +493,118 @@ const hasOwnProp = <K extends string>(value: object, key: K): value is Record<K,
   return Object.prototype.hasOwnProperty.call(value, key);
 };
 
+const REQUEST_TIMEOUT_MS = 120_000;
+
+const combineSignals = (a: AbortSignal, b: AbortSignal): AbortSignal => {
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([a, b]);
+  }
+
+  const controller = new AbortController();
+  if (a.aborted) {
+    controller.abort(a.reason);
+    return controller.signal;
+  }
+  if (b.aborted) {
+    controller.abort(b.reason);
+    return controller.signal;
+  }
+
+  const onAbort = () => controller.abort((a as { reason?: unknown }).reason || (b as { reason?: unknown }).reason);
+  a.addEventListener('abort', onAbort);
+  b.addEventListener('abort', onAbort);
+
+  return controller.signal;
+};
+
+const createTimeoutController = (ms: number): { signal: AbortSignal; clear: () => void } => {
+  let controller: AbortController | null = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  timeoutId = setTimeout(() => {
+    const ctrl = controller;
+    if (ctrl) {
+      ctrl.abort();
+      pushDevLog('gemini', 'timeout', 'warn', { timeoutMs: ms });
+    }
+  }, ms);
+
+  return {
+    signal: (controller as AbortController).signal,
+    clear: () => {
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      controller = null;
+    },
+  };
+};
+
+const parseApiError = (err: unknown): Error => {
+  if (!(err instanceof Error)) {
+    return new Error(String(err));
+  }
+
+  const obj = err as unknown as Record<string, unknown>;
+
+  if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+    return new Error('网络请求失败，请检查网络连接或 API 端点是否可用');
+  }
+
+  const status = obj.status as number | undefined;
+  const code = obj.code as unknown;
+  const msg = err.message || '';
+
+  const parts: string[] = [];
+
+  if (status === 429 || code === 429) {
+    parts.push('请求过于频繁');
+  } else if (status === 401 || status === 403) {
+    parts.push('API 密钥无效或无权限');
+  } else if (status !== undefined && status >= 500) {
+    parts.push('服务器错误');
+  } else if (status !== undefined) {
+    parts.push(`状态码 ${status}`);
+  }
+
+  if (typeof code === 'string' && code !== String(status)) {
+    parts.push(code);
+  }
+
+  if (msg && !parts.some((p) => msg.includes(p))) {
+    parts.push(msg);
+  }
+
+  if (parts.length === 0) {
+    parts.push(msg || '未知错误');
+  }
+
+  return new Error(parts.join(' — '));
+};
+
+const ensureImagesInResponse = (
+  response: GenerateContentResponse,
+  responseModality?: string
+): void => {
+  const images = extractImagesFromResponse(response, 'final');
+  if (images.length > 0) return;
+
+  const modalities = responseModality ? String(responseModality) : '';
+  if (modalities.toUpperCase() === 'IMAGE') {
+    throw new Error('模型未返回图片，可能是提示词未触发图片生成，请尝试修改描述');
+  }
+
+  const candidates = extractCandidates(response);
+  const hasContent = candidates.some(
+    (c) => Array.isArray(c.content?.parts) && c.content.parts.some((p) => typeof p.text === 'string' && p.text.trim())
+  );
+
+  if (!hasContent) {
+    throw new Error('模型返回了空响应，请重试');
+  }
+};
+
 /**
  * Execute a one-shot image generation request.
  */
@@ -516,21 +628,29 @@ export const generateImage = async (
     request.type === 'text-to-image' ? request.enableImageSearch : undefined
   );
 
-  const executeRequest = async () => {
-    const response = await ai.models.generateContent({
+  const timeoutCtrl = createTimeoutController(REQUEST_TIMEOUT_MS);
+  const requestSignal = signal ? combineSignals(signal, timeoutCtrl.signal) : timeoutCtrl.signal;
+
+  let response: GenerateContentResponse;
+
+  try {
+    response = await ai.models.generateContent({
       model: request.model,
       contents,
       config: {
         ...(Object.keys(generationConfig).length > 0 ? generationConfig : {}),
         ...(tools ? { tools } : {}),
+        abortSignal: requestSignal,
       },
-      ...(signal ? { signal } : {}),
     });
+  } catch (err) {
+    throw parseApiError(err);
+  } finally {
+    timeoutCtrl.clear();
+  }
 
-    return response;
-  };
+  ensureImagesInResponse(response, generationConfig.responseModalities?.join(','));
 
-  const response = await executeRequest();
   const orderedParts = extractOrderedPartsFromResponse(response);
   const modelContextTurn = extractModelContextTurn(response);
   const images = extractImagesFromResponse(response, 'final');
@@ -560,41 +680,47 @@ export const chatImageGeneration = async (
 ): Promise<ImageGenerationResponse> => {
   const ai = getClient();
 
-  const enableGoogleSearch = config.enableGoogleSearch;
-  const enableImageSearch = config.enableImageSearch;
-  const responseModality = config.responseModality;
-
   const generationConfig = buildOfficialGenerationConfig({
     model,
     aspectRatio: config.aspectRatio,
     imageSize: config.imageSize,
     thinkingLevel: config.thinkingLevel,
-    responseModality,
+    responseModality: config.responseModality,
   });
-  const tools = buildTools(model, enableGoogleSearch, enableImageSearch);
+  const tools = buildTools(model, config.enableGoogleSearch, config.enableImageSearch);
 
-  const executeRequest = async () => {
-    pushDevLog('gemini.chat', 'request', 'info', {
-      model,
-      generationConfig,
-      contents: summarizeContentsForLog(input),
-    });
+  pushDevLog('gemini.chat', 'request', 'info', {
+    model,
+    generationConfig,
+    contents: summarizeContentsForLog(input),
+  });
 
-    const response = await ai.models.generateContent({
+  const timeoutCtrl = createTimeoutController(REQUEST_TIMEOUT_MS);
+  const requestSignal = signal ? combineSignals(signal, timeoutCtrl.signal) : timeoutCtrl.signal;
+
+  let response: GenerateContentResponse;
+
+  try {
+    response = await ai.models.generateContent({
       model,
       contents: input,
       config: {
         ...generationConfig,
         ...(tools ? { tools } : {}),
+        abortSignal: requestSignal,
       },
-      ...(signal ? { signal } : {}),
     });
+  } catch (err) {
+    pushDevLog('gemini.chat', 'error', 'error', { message: err instanceof Error ? err.message : String(err) });
+    throw parseApiError(err);
+  } finally {
+    timeoutCtrl.clear();
+  }
 
-    pushDevLog('gemini.chat', 'response', 'info', summarizeResponseForLog(response));
-    return response;
-  };
+  pushDevLog('gemini.chat', 'response', 'info', summarizeResponseForLog(response));
 
-  const response = await executeRequest();
+  ensureImagesInResponse(response, config.responseModality);
+
   const orderedParts = extractOrderedPartsFromResponse(response);
   const modelContextTurn = extractModelContextTurn(response);
   const images = extractImagesFromResponse(response, 'final');
