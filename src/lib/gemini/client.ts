@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import type { Candidate, GenerateContentConfig, GenerateContentResponse, Part, Tool } from '@google/genai';
 import type {
+  ApiAccessMode,
   AssistantResponsePart,
   ChatContextPart,
   ChatContextTurn,
@@ -49,6 +50,7 @@ export interface ChatGenerationConfig {
   responseModality?: ResponseModality;
   enableGoogleSearch?: boolean;
   enableImageSearch?: boolean;
+  apiAccessMode?: ApiAccessMode;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -199,6 +201,10 @@ const getApiKey = (): string => {
 
 const getBaseUrl = (): string | undefined => {
   return import.meta.env.VITE_GEMINI_BASE_URL || import.meta.env.GEMINI_API_BASE_URL;
+};
+
+const getProxyPath = (): string => {
+  return import.meta.env.VITE_GEMINI_PROXY_PATH || '/api/gemini';
 };
 
 let client: GoogleGenAI | null = null;
@@ -495,6 +501,85 @@ const hasOwnProp = <K extends string>(value: object, key: K): value is Record<K,
 
 const REQUEST_TIMEOUT_MS = 120_000;
 
+type GenerateContentPayload = {
+  model: ImageModel;
+  contents: string | ContentPart[] | ChatContextTurn[];
+  config: GeminiGenerationConfig & { tools?: Tool[] };
+};
+
+const resolveApiAccessMode = (value?: ApiAccessMode): ApiAccessMode => {
+  return value === 'proxy' ? 'proxy' : 'direct';
+};
+
+const createApiError = (message: string, status?: number, code?: unknown): Error => {
+  const error = new Error(message);
+  const errorRecord = error as Error & { status?: number; code?: unknown };
+  if (status !== undefined) {
+    errorRecord.status = status;
+  }
+  if (code !== undefined) {
+    errorRecord.code = code;
+  }
+  return error;
+};
+
+const generateContentDirect = async (
+  payload: GenerateContentPayload,
+  signal: AbortSignal
+): Promise<GenerateContentResponse> => {
+  const ai = getClient();
+  return ai.models.generateContent({
+    model: payload.model,
+    contents: payload.contents,
+    config: {
+      ...payload.config,
+      abortSignal: signal,
+    },
+  });
+};
+
+const generateContentProxy = async (
+  payload: GenerateContentPayload,
+  signal: AbortSignal
+): Promise<GenerateContentResponse> => {
+  const response = await fetch(getProxyPath(), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const data = contentType.includes('application/json')
+    ? await response.json() as unknown
+    : await response.text();
+
+  if (!response.ok) {
+    if (isRecord(data)) {
+      const message = typeof data.error === 'string' && data.error.trim()
+        ? data.error
+        : `Proxy request failed with status ${response.status}`;
+      throw createApiError(message, response.status, data.code);
+    }
+    throw createApiError(String(data || `Proxy request failed with status ${response.status}`), response.status);
+  }
+
+  return data as GenerateContentResponse;
+};
+
+const generateContent = async (
+  payload: GenerateContentPayload,
+  apiAccessMode: ApiAccessMode | undefined,
+  signal: AbortSignal
+): Promise<GenerateContentResponse> => {
+  if (resolveApiAccessMode(apiAccessMode) === 'proxy') {
+    return generateContentProxy(payload, signal);
+  }
+  return generateContentDirect(payload, signal);
+};
+
 const combineSignals = (a: AbortSignal, b: AbortSignal): AbortSignal => {
   if (typeof AbortSignal.any === 'function') {
     return AbortSignal.any([a, b]);
@@ -560,6 +645,8 @@ const parseApiError = (err: unknown): Error => {
 
   if (status === 429 || code === 429) {
     parts.push('请求过于频繁');
+  } else if (status === 413 || code === 413) {
+    parts.push('中转请求或响应超过 Vercel Function 4.5 MB 限制');
   } else if (status === 401 || status === 403) {
     parts.push('API 密钥无效或无权限');
   } else if (status !== undefined && status >= 500) {
@@ -612,8 +699,6 @@ export const generateImage = async (
   request: ImageGenerationRequest,
   signal?: AbortSignal
 ): Promise<ImageGenerationResponse> => {
-  const ai = getClient();
-
   const contents = buildContents(request);
   const generationConfig = buildOfficialGenerationConfig({
     model: request.model,
@@ -634,15 +719,18 @@ export const generateImage = async (
   let response: GenerateContentResponse;
 
   try {
-    response = await ai.models.generateContent({
-      model: request.model,
-      contents,
-      config: {
-        ...(Object.keys(generationConfig).length > 0 ? generationConfig : {}),
-        ...(tools ? { tools } : {}),
-        abortSignal: requestSignal,
+    response = await generateContent(
+      {
+        model: request.model,
+        contents,
+        config: {
+          ...(Object.keys(generationConfig).length > 0 ? generationConfig : {}),
+          ...(tools ? { tools } : {}),
+        },
       },
-    });
+      request.apiAccessMode,
+      requestSignal
+    );
   } catch (err) {
     throw parseApiError(err);
   } finally {
@@ -678,8 +766,6 @@ export const chatImageGeneration = async (
   config: ChatGenerationConfig,
   signal?: AbortSignal
 ): Promise<ImageGenerationResponse> => {
-  const ai = getClient();
-
   const generationConfig = buildOfficialGenerationConfig({
     model,
     aspectRatio: config.aspectRatio,
@@ -701,15 +787,18 @@ export const chatImageGeneration = async (
   let response: GenerateContentResponse;
 
   try {
-    response = await ai.models.generateContent({
-      model,
-      contents: input,
-      config: {
-        ...generationConfig,
-        ...(tools ? { tools } : {}),
-        abortSignal: requestSignal,
+    response = await generateContent(
+      {
+        model,
+        contents: input,
+        config: {
+          ...generationConfig,
+          ...(tools ? { tools } : {}),
+        },
       },
-    });
+      config.apiAccessMode,
+      requestSignal
+    );
   } catch (err) {
     pushDevLog('gemini.chat', 'error', 'error', { message: err instanceof Error ? err.message : String(err) });
     throw parseApiError(err);

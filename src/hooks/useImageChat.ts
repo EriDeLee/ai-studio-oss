@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type {
+  ApiAccessMode,
   ChatContextPart,
   ChatContextTurn,
   ChatMessage,
@@ -39,6 +40,10 @@ const CHAT_IDB_ACTIVE_SESSION_KEY = 'activeSessionId';
 
 const isResponseModality = (value: unknown): value is NonNullable<ImageChatSettings['responseModality']> => {
   return value === 'text_image' || value === 'image';
+};
+
+const isApiAccessMode = (value: unknown): value is ApiAccessMode => {
+  return value === 'direct' || value === 'proxy';
 };
 
 type ImageMimeType =
@@ -561,6 +566,10 @@ function normalizeSettings(input: unknown): ImageChatSettings {
     next.responseModality = candidate.responseModality;
   }
 
+  if (isApiAccessMode(candidate.apiAccessMode)) {
+    next.apiAccessMode = candidate.apiAccessMode;
+  }
+
   const normalizedTools = normalizeSearchToolsForModel(
     next.model,
     candidate.enableGoogleSearch,
@@ -859,6 +868,7 @@ export function useImageChat(): UseImageChatReturn {
           responseModality: settings.responseModality,
           enableGoogleSearch: settings.enableGoogleSearch,
           enableImageSearch: settings.enableImageSearch,
+          apiAccessMode: settings.apiAccessMode,
         };
         if (supportsThinkingConfig(settings.model)) {
           config.thinkingLevel = settings.thinkingLevel;
@@ -869,6 +879,7 @@ export function useImageChat(): UseImageChatReturn {
           model: settings.model,
           thinkingLevel: config.thinkingLevel,
           responseModality: config.responseModality,
+          apiAccessMode: config.apiAccessMode,
           historyLength: baseMessages.length,
           hasAttachments: Boolean(normalizedAttachments && normalizedAttachments.length > 0),
         });

@@ -18,6 +18,9 @@ export type ThinkingLevel = 'minimal' | 'high';
 // 响应模态
 export type ResponseModality = 'text_image' | 'image';
 
+// API 访问模式
+export type ApiAccessMode = 'direct' | 'proxy';
+
 // 图像生成请求
 export interface TextToImageRequest {
   type: 'text-to-image';
@@ -29,6 +32,7 @@ export interface TextToImageRequest {
   responseModality?: ResponseModality;
   enableGoogleSearch?: boolean;
   enableImageSearch?: boolean;
+  apiAccessMode?: ApiAccessMode;
 }
 
 export interface ImageToImageRequest {
@@ -37,6 +41,7 @@ export interface ImageToImageRequest {
   prompt: string;
   referenceImages: string[];
   referenceImageMimeTypes?: string[];
+  apiAccessMode?: ApiAccessMode;
 }
 
 export interface InpaintingRequest {
@@ -46,6 +51,7 @@ export interface InpaintingRequest {
   referenceImages: string[];
   maskImage?: string;
   referenceImageMimeTypes?: string[];
+  apiAccessMode?: ApiAccessMode;
 }
 
 export type ImageGenerationRequest =
@@ -163,4 +169,5 @@ export interface ImageChatSettings {
   responseModality: ResponseModality;
   enableGoogleSearch: boolean;
   enableImageSearch: boolean;
+  apiAccessMode: ApiAccessMode;
 }

@@ -15,6 +15,7 @@ export function Layout() {
   const { newChat, settings, setSettings, sessions, activeSessionId, switchSession, deleteSession } = chat;
 
   const activeModelLabel = getImageModelLabel(settings.model);
+  const activeAccessModeLabel = settings.apiAccessMode === 'proxy' ? '中转' : '直连';
 
   const formatTime = (timestamp: number) =>
     new Date(timestamp).toLocaleString('zh-CN', {
@@ -35,7 +36,7 @@ export function Layout() {
           <div className="flex items-center gap-1.5 sm:gap-2">
             <div className="hidden items-center gap-1.5 rounded-full border border-black/10 bg-black/5 px-3 py-1.5 text-xs text-[var(--text-2)] dark:border-white/10 dark:bg-white/10 lg:flex">
               <Sparkles className="h-3.5 w-3.5 text-primary-500" />
-              {activeModelLabel}
+              {activeModelLabel} / {activeAccessModeLabel}
             </div>
             <button
               type="button"

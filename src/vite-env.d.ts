@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_GEMINI_API_KEY: string
   readonly VITE_GEMINI_BASE_URL?: string
+  readonly VITE_GEMINI_PROXY_PATH?: string
   readonly GEMINI_API_KEY?: string
   readonly GEMINI_API_BASE_URL?: string
 }

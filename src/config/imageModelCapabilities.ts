@@ -84,6 +84,7 @@ export const DEFAULT_IMAGE_CHAT_SETTINGS: ImageChatSettings = {
   responseModality: 'text_image',
   enableGoogleSearch: false,
   enableImageSearch: false,
+  apiAccessMode: 'direct',
 };
 
 export const IMAGE_MODEL_OPTIONS = IMAGE_MODEL_CATALOG.map((item) => ({

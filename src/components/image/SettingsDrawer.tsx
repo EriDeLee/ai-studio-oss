@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Settings2, RotateCcw, Bug } from 'lucide-react';
-import type { ImageChatSettings, ThinkingLevel, ResponseModality } from '../../types';
+import { X, Settings2, RotateCcw, Bug, Cable, Cloud } from 'lucide-react';
+import type { ApiAccessMode, ImageChatSettings, ThinkingLevel, ResponseModality } from '../../types';
 import { cn } from '../../lib/utils';
 import { DEV_LOG_EVENT_NAME, clearDevLogs, getDevLogs, type DevLogEntry } from '../../lib/devConsole';
 import {
@@ -34,6 +34,11 @@ const THINKING_LEVEL_OPTIONS: { value: ThinkingLevel; label: string }[] = [
 const RESPONSE_MODALITY_OPTIONS: { value: ResponseModality; label: string }[] = [
   { value: 'text_image', label: 'TEXT + IMAGE' },
   { value: 'image', label: 'IMAGE ONLY' },
+];
+
+const API_ACCESS_MODE_OPTIONS: { value: ApiAccessMode; label: string; detail: string }[] = [
+  { value: 'direct', label: '直连', detail: '浏览器访问 Base URL' },
+  { value: 'proxy', label: '中转', detail: 'Vercel /api/gemini' },
 ];
 
 function Switch({
@@ -208,6 +213,46 @@ export function SettingsDrawer({ settings, onChange, open, onClose }: SettingsDr
                   <div className="mt-1.5 text-xs text-[var(--text-3)] leading-relaxed">{model.description}</div>
                 </button>
               ))}
+            </section>
+
+            <section className="space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-3)]">连接方式</p>
+                <span className="rounded-full bg-black/5 px-2 py-0.5 text-[10px] text-[var(--text-3)] dark:bg-white/10">
+                  network
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-black/10 bg-black/[0.03] p-1 dark:border-white/10 dark:bg-black/20">
+                {API_ACCESS_MODE_OPTIONS.map((option) => {
+                  const selected = settings.apiAccessMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => update('apiAccessMode', option.value)}
+                      aria-pressed={selected}
+                      className={cn(
+                        'flex min-h-16 items-center gap-2 rounded-lg px-3 py-2 text-left transition-all duration-200',
+                        selected
+                          ? 'bg-[var(--panel)] text-[var(--text-1)] shadow-sm ring-1 ring-primary-400/40'
+                          : 'text-[var(--text-2)] hover:bg-black/5 dark:hover:bg-white/10'
+                      )}
+                    >
+                      {option.value === 'direct' ? (
+                        <Cable className="h-4 w-4 shrink-0 text-primary-500" />
+                      ) : (
+                        <Cloud className="h-4 w-4 shrink-0 text-primary-500" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold leading-5">{option.label}</span>
+                        <span className="block truncate text-[11px] leading-4 text-[var(--text-3)]">
+                          {option.detail}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </section>
 
             <section className="space-y-3 rounded-2xl border border-black/10 bg-black/[0.02] p-3 dark:border-white/10 dark:bg-white/[0.03]">
