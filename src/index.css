@@ -92,6 +92,13 @@ body {
   overscroll-behavior: none;
 }
 
+.dark body {
+  background:
+    radial-gradient(1200px 520px at 76% -16%, color-mix(in oklab, var(--color-primary-800) 26%, transparent), transparent 72%),
+    radial-gradient(980px 620px at 0% 108%, color-mix(in oklab, var(--color-primary-900) 18%, transparent), transparent 78%),
+    linear-gradient(180deg, #111827 0%, #0d1424 46%, #0a0f1e 100%);
+}
+
 #root {
   min-height: 100dvh;
 }
