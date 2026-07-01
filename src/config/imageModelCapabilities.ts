@@ -44,6 +44,21 @@ const PRO_IMAGE_SIZES = ['', '1K', '2K', '4K'] as const;
 
 const IMAGE_MODEL_CATALOG: readonly ImageModelCatalogItem[] = [
   {
+    id: 'gemini-3.1-flash-lite-image',
+    name: 'Gemini 3.1 Flash Lite Image',
+    description: '超低延迟，适合实时应用。',
+    tag: '极速响应',
+    supportedTaskTypes: [...IMAGE_TASK_TYPES],
+    supportsImageSearch: false,
+    supportsThinkingConfig: true,
+    supportsThinkingLevelParam: true,
+    allowedImageSizes: ['', '1K'],
+    allowedAspectRatios: [
+      '1:1', '1:4', '1:8', '3:2', '2:3', '3:4', '4:1', '4:3',
+      '4:5', '5:4', '8:1', '9:16', '16:9', '21:9',
+    ],
+  },
+  {
     id: 'gemini-3.1-flash-image-preview',
     name: 'Gemini 3.1 Flash Image',
     description: '更快响应，适合高频迭代。',

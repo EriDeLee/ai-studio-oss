@@ -1,10 +1,11 @@
 // 模态类型
 export type ModalityType = 'image' | 'audio' | 'video' | 'text';
 
-// 图像生成模型（仅支持两款）
+// 图像生成模型
 export type ImageModel =
   | 'gemini-3-pro-image-preview'
-  | 'gemini-3.1-flash-image-preview';
+  | 'gemini-3.1-flash-image-preview'
+  | 'gemini-3.1-flash-lite-image';
 
 // 所有模型联合类型
 export type Model = ImageModel;
